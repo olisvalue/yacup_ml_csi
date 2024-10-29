@@ -1,2 +1,0 @@
-{"Epoch": 0, "train_loss_step": 10.774, "train_cls_loss_step": 10.472, "train_triplet_loss_step": 0.301, "train_loss": 11.194746971130371, "train_cls_loss": 10.917551040649414, "train_triplet_loss": 0.27719488739967346, "mrr": 0.06608619299764734, "mAP": 0.01191951868347732}
-{"Epoch": 1, "train_loss_step": 10.769, "train_cls_loss_step": 10.471, "train_triplet_loss_step": 0.298, "train_loss": 11.194746971130371, "train_cls_loss": 10.917551040649414, "train_triplet_loss": 0.27719488739967346, "mrr": 0.06554356513282021, "mAP": 0.011758482160510978}

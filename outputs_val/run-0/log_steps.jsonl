@@ -1,2 +1,0 @@
-{"epoch": 0, "seq_len": 50, "step": 0, "train_loss_step": "11.848", "train_cls_loss_step": "11.549", "train_triplet_loss_step": "0.300"}
-{"epoch": 0, "seq_len": 50, "step": 10, "train_loss_step": "11.718", "train_cls_loss_step": "11.419", "train_triplet_loss_step": "0.299"}
