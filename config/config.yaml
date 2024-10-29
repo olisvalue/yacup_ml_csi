@@ -5,6 +5,19 @@ debug: True
 progress_bar: True
 device: "cuda:0"
 num_channels: 1
+embed_dim: 2048
+
+ce:
+  output_dims: 30000
+  weight: 1.0
+  gamma: 2
+
+triplet:
+  margin: 0.3
+  weight: 0.1
+
+center:
+  weight: 0.01
 
 train:
   dataset_path: "/home/olisvalue/contests/baseline/data/train"
@@ -15,7 +28,7 @@ train:
   cls_importance: 0.01
   smooth_factor: 0.1
   dropout: 0.1
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-12/model/best-model-epoch=4-max_secs=50.pt"
+  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
   batch_size: 200
   num_workers: 0
   shuffle: True
@@ -24,6 +37,7 @@ train:
   learning_rate: 0.0001
   patience: 4
   log_steps: 10
+  gamma: 2
 
 val:
   dataset_path: "/home/olisvalue/contests/baseline/data/train"

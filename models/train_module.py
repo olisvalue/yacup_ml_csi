@@ -22,12 +22,11 @@ from models.utils import (
     save_best_log,
     save_logs,
     save_predictions,
-    save_test_predictions
+    save_test_predictions,
+    Zero
 )
 
-
-import os
-import sys
+from models.loss import CenterLoss, FocalLoss, HardTripletLoss
 
 # current_dir = os.getcwd()
 # os.chdir('/home/olisvalue/contests/baseline/EfficientAT')
@@ -64,8 +63,26 @@ class TrainModule:
         self.postfix: Postfix = {}
 
         #self.triplet_loss = nn.TripletMarginLoss(margin=config["train"]["triplet_margin"])
-        self.triplet_loss = nn.TripletMarginWithDistanceLoss(distance_function=lambda x, y: 1.0 - F.cosine_similarity(x, y), margin=config["train"]["triplet_margin"])
-        self.cls_loss = nn.CrossEntropyLoss(label_smoothing=config["train"]["smooth_factor"])
+        # self.triplet_loss = nn.TripletMarginWithDistanceLoss(distance_function=lambda x, y: 1.0 - F.cosine_similarity(x, y), margin=config["train"]["triplet_margin"])
+        # self.cls_loss = nn.CrossEntropyLoss(label_smoothing=config["train"]["smooth_factor"])
+
+        # Loss
+        if "alpha" in config["train"].keys():
+            alpha = np.load(hp["ce"]["alpha"])
+            alpha = 1.0 / (alpha + 1)
+            alpha = alpha / np.sum(alpha)
+            logger.info("use alpha with {}".format(len(alpha)))
+        else:
+            alpha = None
+            logger.info("Not use alpha")
+
+        self.triplet_loss = HardTripletLoss(margin=config["train"]["triplet_margin"])
+        
+        self.cls_loss = FocalLoss(alpha=alpha, gamma=config["train"]["gamma"],
+                              num_cls=config["train"]["num_classes"])
+        
+        self.center_loss = CenterLoss(num_classes=config["train"]["num_classes"],
+                                    feat_dim=config["embed_dim"], use_gpu=True)
 
         self.early_stop = EarlyStopper(patience=self.config["train"]["patience"])
         self.optimizer = self.configure_optimizers()
@@ -143,6 +160,8 @@ class TrainModule:
         train_loss_list = []
         train_cls_loss_list = []
         train_triplet_loss_list = []
+        train_center_loss_list = []
+
         self.max_len = self.t_loader.dataset.max_len
         for step, batch in tqdm(
             enumerate(self.t_loader),
@@ -158,6 +177,8 @@ class TrainModule:
             train_cls_loss_list.append(train_step["train_cls_loss"])
             self.postfix["train_triplet_loss_step"] = float(f"{train_step['train_triplet_loss']:.3f}")
             train_triplet_loss_list.append(train_step["train_triplet_loss"])
+            self.postfix["train_center_loss_step"] = float(f"{train_step['train_center_loss']:.3f}")
+            train_center_loss_list.append(train_step["train_center_loss"])
             self.pbar.set_postfix(
                 {k: self.postfix[k] for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}}
             )
@@ -170,6 +191,7 @@ class TrainModule:
                         train_loss_step=f"{train_step['train_loss_step']:.3f}",
                         train_cls_loss_step=f"{train_step['train_cls_loss']:.3f}",
                         train_triplet_loss_step=f"{train_step['train_triplet_loss']:.3f}",
+                        train_center_loss_step=f"{train_step['train_center_loss']:.3f}",
                     ),
                     output_dir=self.config["val"]["output_dir"],
                     name="log_steps",
@@ -177,9 +199,12 @@ class TrainModule:
         train_loss = torch.tensor(train_loss_list)
         train_cls_loss = torch.tensor(train_cls_loss_list)
         train_triplet_loss = torch.tensor(train_triplet_loss_list)
+        train_center_loss = torch.tensor(train_center_loss_list)
         self.postfix["train_loss"] = train_loss.mean().item()
         self.postfix["train_cls_loss"] = train_cls_loss.mean().item()
         self.postfix["train_triplet_loss"] = train_triplet_loss.mean().item()
+        self.postfix["train_center_loss"] = train_center_loss.mean().item()
+        
         self.validation_procedure()
         self.overfit_check()
         self.pbar.set_postfix({k: self.postfix[k] for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}})
@@ -198,21 +223,51 @@ class TrainModule:
             anchor = self.model.forward(batch["anchor"].to(self.config["device"]))
             positive = self.model.forward(batch["positive"].to(self.config["device"]))
             negative = self.model.forward(batch["negative"].to(self.config["device"]))
-            l1 = self.triplet_loss(anchor["f_t"], positive["f_t"], negative["f_t"])
-            labels = nn.functional.one_hot(batch["anchor_label"].long(), num_classes=self.num_classes)
-            l2 = self.cls_loss(anchor["cls"], labels.float().to(self.config["device"]))
-            loss = l1*self.config["train"]["triplet_importance"] + l2*self.config["train"]["cls_importance"]
+            # labels = nn.functional.one_hot(batch["anchor_label"].long(), num_classes=self.num_classes)
+            labels_anchor = batch["anchor_label"].long()
+            labels_neg = batch["negative_label"].long()
+
+
+            embeddings = torch.cat([anchor["f_t"], positive["f_t"], negative["f_t"]], dim=0)
+
+            batch_size = embeddings.shape[0]
+            
+            labels = torch.cat([
+                labels_anchor,  
+                labels_anchor, 
+                labels_neg
+            ]).to(self.config["device"]).long()
+
+            tri_loss = self.triplet_loss(embeddings, labels.to(self.config["device"]))*self.config["ce"]["weight"]
+            ce_loss = self.cls_loss(anchor["cls"], labels_anchor.float().to(self.config["device"]))*self.config["triplet"]["weight"]
+
+            if self.config["center"]["weight"] < 0.001:
+                center_loss = Zero()
+            else:
+                center_loss = self.center_loss(anchor["f_c"], labels_anchor.to(self.config["device"]))*self.config["center"]["weight"]
+
+            loss = tri_loss + ce_loss + center_loss
+
 
         self.optimizer.zero_grad()
         if self.config["device"] != "cpu":
             self.scaler.scale(loss).backward()
+            
+            self.scaler.unscale_(self.optimizer)  # Размасштабирование градиентов перед отсечением
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
+            
 
-        return {"train_loss_step": loss.item(), "train_triplet_loss": l1.item(), "train_cls_loss": l2.item()}
+        return {"train_loss_step": loss.item(), 
+                "train_triplet_loss": tri_loss.item(), 
+                "train_cls_loss": ce_loss.item(),
+                "train_center_loss": center_loss.item()}
 
     def validation_procedure(self) -> None:
         self.model.eval()

@@ -13,6 +13,14 @@ from torch.utils.data import DataLoader
 from models.data_loader import cover_dataloader
 from models.data_model import Postfix
 
+class Zero:
+    def __init__(self):
+        self.value = 0.0
+    def __float__(self):
+        return self.value
+    def item(self):
+        return self.value
+
 def reduce_func(D_chunk, start):
     top_size = 100
     nearest_items = np.argsort(D_chunk, axis=1)[:, :top_size + 1]

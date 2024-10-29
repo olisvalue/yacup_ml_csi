@@ -1,0 +1,1 @@
+{"Epoch": 0, "train_loss_step": 34.938, "train_cls_loss_step": 1.048, "train_triplet_loss_step": 0.848, "train_center_loss_step": 33.043, "mrr": 0.11478084344732885, "mAP": 0.019719553322489917}

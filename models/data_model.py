@@ -17,6 +17,7 @@ class BatchDict(TypedDict):
     positive: torch.Tensor
     negative_id: int
     negative: torch.Tensor
+    negative_label: torch.Tensor
 
 
 class Postfix(TypedDict):
@@ -27,6 +28,8 @@ class Postfix(TypedDict):
     train_cls_loss_step: float
     train_triplet_loss: float
     train_triplet_loss_step: float
+    train_center_loss: float
+    train_center_loss_step: float
     val_loss: float
     mr1: float
     mAP: float

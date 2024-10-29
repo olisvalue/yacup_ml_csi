@@ -43,8 +43,10 @@ class CoverDataset(Dataset):
             pos_id, neg_id = self._triplet_sampling(track_id, clique_id)        
             positive_cqt = self._load_cqt(pos_id)
             negative_cqt = self._load_cqt(neg_id)
+            neg_clique_id = self.version2clique.loc[neg_id, 'clique']
         else:
             clique_id = -1
+            neg_clique_id = -1
             pos_id = torch.empty(0)
             positive_cqt = torch.empty(0)
             neg_id = torch.empty(0)
@@ -57,6 +59,7 @@ class CoverDataset(Dataset):
             positive=positive_cqt,
             negative_id=neg_id,
             negative=negative_cqt,
+            negative_label = torch.tensor(neg_clique_id, dtype=torch.float)
         )
 
     def _make_file_path(self, track_id, file_ext):
