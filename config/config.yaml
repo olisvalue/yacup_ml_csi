@@ -6,6 +6,9 @@ progress_bar: True
 device: "cuda:0"
 num_channels: 1
 embed_dim: 2048
+use_wandb: True
+
+seed: 1234
 
 ce:
   output_dims: 30000
@@ -24,17 +27,23 @@ train:
   mixed_precision: True
   num_classes: 39535
   triplet_margin: 0.2
-  triplet_importance: 5
-  cls_importance: 0.01
   smooth_factor: 0.1
   dropout: 0.1
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
-  batch_size: 200
+  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-25/model/best-model-epoch=0-max_secs=50.pt"
+  batch_size: 40
   num_workers: 0
   shuffle: True
   drop_last: True
   epochs: 25
-  learning_rate: 0.0001
+
+  # learning_rate: 0.001
+  learning_rate: 0.0009
+  adam_b1: 0.8
+  adam_b2: 0.99
+  lr_decay: 0.9975
+  min_lr: 0.0001
+  lr_update_steps: 1000
+
   patience: 4
   log_steps: 10
   gamma: 2

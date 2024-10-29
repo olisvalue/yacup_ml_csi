@@ -13,6 +13,9 @@ from torch.utils.data import DataLoader
 from models.data_loader import cover_dataloader
 from models.data_model import Postfix
 
+import wandb
+
+
 class Zero:
     def __init__(self):
         self.value = 0.0
@@ -121,15 +124,23 @@ def save_predictions(outputs: Dict[str, np.ndarray], output_dir: str) -> None:
             np.save(os.path.join(output_dir, f"{key}.npy"), outputs[key])
 
 
-def save_logs(outputs: dict, output_dir: str, name: str = "log") -> None:
+
+def save_logs(outputs: dict, output_dir: str, name: str = "log", use_wandb: bool = False) -> None:
     os.makedirs(output_dir, exist_ok=True)
+    
     log_file = os.path.join(output_dir, f"{name}.jsonl")
     with jsonlines.open(log_file, "a") as f:
         f.write(outputs)
+    if use_wandb:
+        wandb.log({k: float(v) for k, v in outputs.items()})
 
 
-def save_best_log(outputs: Postfix, output_dir: str) -> None:
+
+def save_best_log(outputs: Postfix, output_dir: str, use_wandb: bool = False) -> None:
     os.makedirs(output_dir, exist_ok=True)
     log_file = os.path.join(output_dir, "best-log.json")
     with open(log_file, "w") as f:
         json.dump(outputs, f, indent=2)
+    if use_wandb:
+        wandb.log({k: float(v) for k, v in dict(outputs).items()})
+

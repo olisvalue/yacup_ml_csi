@@ -1,4 +1,7 @@
 import logging
+import wandb
+wandb.init(project="yacup_ml_music_2")
+
 import os
 from copy import deepcopy
 from typing import Dict, List
@@ -27,6 +30,7 @@ from models.utils import (
 )
 
 from models.loss import CenterLoss, FocalLoss, HardTripletLoss
+from models.scheduler import UserDefineExponentialLR
 
 # current_dir = os.getcwd()
 # os.chdir('/home/olisvalue/contests/baseline/EfficientAT')
@@ -35,8 +39,22 @@ from models.loss import CenterLoss, FocalLoss, HardTripletLoss
 # os.chdir(current_dir)
 # sys.path.pop(0)
 
+# class WandbHandler(logging.Handler):
+#     def emit(self, record):
+#         log_message = self.format(record)
+#         wandb.log({"log_message": log_message})  # Измените "log" на "log_message"
 
-logger: logging.Logger = logging.getLogger()  # The logger used to log output
+# Настройка логгера
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# wandb_handler = WandbHandler()
+# wandb_handler.setLevel(logging.INFO)
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# wandb_handler.setFormatter(formatter)
+# logger.addHandler(wandb_handler)
+
+# Пример использования
+logger.info("This log message will be sent to wandb!")
 
 
 class TrainModule:
@@ -86,6 +104,10 @@ class TrainModule:
 
         self.early_stop = EarlyStopper(patience=self.config["train"]["patience"])
         self.optimizer = self.configure_optimizers()
+        self.scheduler = UserDefineExponentialLR(
+                optimizer=self.optimizer, gamma=config["train"]["lr_decay"],
+                min_lr=config["train"]["min_lr"], last_epoch=-1)
+
         if self.config["device"] != "cpu":
             #self.scaler = torch.cuda.amp.GradScaler(enabled=self.config["train"]["mixed_precision"])
             self.scaler = torch.amp.GradScaler('cuda', enabled=self.config["train"]["mixed_precision"])
@@ -188,14 +210,18 @@ class TrainModule:
                         epoch=self.postfix["Epoch"],
                         seq_len=self.max_len,
                         step=step,
-                        train_loss_step=f"{train_step['train_loss_step']:.3f}",
-                        train_cls_loss_step=f"{train_step['train_cls_loss']:.3f}",
-                        train_triplet_loss_step=f"{train_step['train_triplet_loss']:.3f}",
-                        train_center_loss_step=f"{train_step['train_center_loss']:.3f}",
+                        train_loss_step= self.postfix["train_loss_step"],
+                        train_cls_loss_step=self.postfix["train_cls_loss_step"],
+                        train_triplet_loss_step=self.postfix["train_triplet_loss_step"],
+                        train_center_loss_step=self.postfix["train_center_loss_step"],
                     ),
                     output_dir=self.config["val"]["output_dir"],
                     name="log_steps",
+                    use_wandb=self.config["use_wandb"]
                 )
+            if step % self.config["train"]["lr_update_steps"] == 0:
+                self.scheduler.step()
+
         train_loss = torch.tensor(train_loss_list)
         train_cls_loss = torch.tensor(train_cls_loss_list)
         train_triplet_loss = torch.tensor(train_triplet_loss_list)
@@ -290,7 +316,8 @@ class TrainModule:
         if self.config["val"]["save_val_outputs"]:
             val_outputs["val_embeddings"] = torch.stack(list(embeddings.values()))[:, 1].numpy()
             save_predictions(val_outputs, output_dir=self.config["val"]["output_dir"])
-            save_logs(self.postfix, output_dir=self.config["val"]["output_dir"])
+            save_logs(self.postfix, output_dir=self.config["val"]["output_dir"],
+                      use_wandb=self.config["use_wandb"])
         self.model.train()
 
     def validation_epoch_end(self, outputs: Dict[int, torch.Tensor]) -> Dict[str, np.ndarray]:
@@ -394,7 +421,8 @@ class TrainModule:
             logger.info("\nValidation mAP was not improved")
         else:
             logger.info(f"\nMetric improved. New best score: {self.early_stop.max_validation_mAP:.3f}")
-            save_best_log(self.postfix, output_dir=self.config["val"]["output_dir"])
+            save_best_log(self.postfix, output_dir=self.config["val"]["output_dir"],
+                          use_wandb=self.config["use_wandb"])
 
             logger.info("Saving model...")
             epoch = self.postfix["Epoch"]
@@ -409,6 +437,9 @@ class TrainModule:
                 os.remove(prev_model)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config["train"]["learning_rate"])
-
+        optimizer = torch.optim.AdamW(
+            params=self.model.parameters(),
+            lr=self.config["train"]["learning_rate"],
+            betas=[self.config["train"]["adam_b1"], self.config["train"]["adam_b2"]]
+        )
         return optimizer
