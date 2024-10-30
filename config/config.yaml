@@ -29,20 +29,20 @@ train:
   triplet_margin: 0.3
   smooth_factor: 0.1
   dropout: 0.1
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-25/model/best-model-epoch=0-max_secs=50.pt"
-  batch_size: 40
+  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
+  batch_size: 150
   num_workers: 0
   shuffle: True
   drop_last: True
   epochs: 25
 
-  # learning_rate: 0.001
-  learning_rate: 0.0009
+  learning_rate: 0.001
+  # learning_rate: 0.0009
   adam_b1: 0.8
   adam_b2: 0.99
-  lr_decay: 0.9975
+  lr_decay: 0.95
   min_lr: 0.0001
-  lr_update_steps: 1000
+  lr_update_steps: 550
 
   patience: 4
   log_steps: 10
@@ -57,11 +57,12 @@ val:
   shuffle: False
   drop_last: False
   output_dir: "outputs_val"
+  val_period: 600
 
 test:
   dataset_path: "/home/olisvalue/contests/baseline/data/test"
   save_test_outputs: True
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-12/model/best-model-epoch=4-max_secs=50.pt"
+  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-42/model/best-model-epoch=5-max_secs=50.pt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0

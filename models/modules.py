@@ -78,16 +78,25 @@ class Bottleneck(nn.Module):
 
     def forward(self, x: torch.Tensor):
         residual = x.clone()
+        # print('*'*50)
+        # print(f"input has shape {x.shape}")
 
         x = self.conv1(x)
+        # print(f"after conv1 x has shape {x.shape}")
         x = self.ibn(x)
         x = self.relu(x)
+        # print(f"after ibn and relu x has shape {x.shape}")
 
         x = self.conv2(x)
+        # print(f"after conv2 x has shape {x.shape}")
+
         x = self.batch_norm2(x)
         x = self.relu(x)
 
         x = self.conv3(x)
+        # print(f"after conv3 x has shape {x.shape}")
+
+
         x = self.batch_norm3(x)
         x = self.relu(x)
 
@@ -95,6 +104,11 @@ class Bottleneck(nn.Module):
             residual = self.downsample(residual)
 
         out = residual + x
+        
+        # print(f"out has shape {out.shape}")
+        # print('*'*50)
+
+
         out = self.relu(out)
 
         return out
@@ -115,11 +129,11 @@ class Resnet50(nn.Module):
         self.in_channels = 64
 
         self.conv1 = nn.Conv2d(
-            in_channels=num_channels, out_channels=64, kernel_size=7, stride=2, padding=3, bias=False
+            in_channels=num_channels, out_channels=64, kernel_size=3, stride=2, padding=1, bias=False
         )
         self.batch_norm1 = nn.BatchNorm2d(num_features=64)
         self.relu = nn.ReLU()
-        self.max_pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        # self.max_pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         self.layer1 = self._make_layer(ResBlock, blocks=3, planes=64, stride=1)
         self.layer2 = self._make_layer(ResBlock, blocks=4, planes=128, stride=2)
@@ -152,18 +166,30 @@ class Resnet50(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # Unsqueeze to simulate 1-channel image
+        # print(f"inside resnet 50. x has shape {x.shape}")
+
         x = self.conv1(x.unsqueeze(1))
         x = self.batch_norm1(x)
         x = self.relu(x)
-        x = self.max_pool1(x)
+        # x = self.max_pool1(x)
+        # print(f"inside resnet 50. before layer 1, x has shape {x.shape}")
 
         x = self.layer1(x)
+        # print(f"inside resnet 50. after layer 1, x has shape {x.shape}")
+
         x = self.layer2(x)
+        # print(f"inside resnet 50. after layer 2, x has shape {x.shape}")
         x = self.layer3(x)
+        # print(f"inside resnet 50. after layer 3, x has shape {x.shape}")
         x = self.layer4(x)
+        # print(f"inside resnet 50. after layer 4, x has shape {x.shape}")
+
 
         f_t = self.gem_pool(x)
         f_t = self.dropout(torch.flatten(f_t, start_dim=1))
+        
+        # print(f"inside resnet 50. after gempool, x has shape {f_t.shape}")
+
 
         f_c = self.bn_fc(f_t)
         cls = self.fc(f_c)

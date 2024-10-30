@@ -1,6 +1,6 @@
 import logging
 import wandb
-wandb.init(project="yacup_ml_music_2")
+wandb.init(project="yacup_ml_nopool_lowstride")
 
 import os
 from copy import deepcopy
@@ -116,10 +116,10 @@ class TrainModule:
         self.config["val"]["output_dir"] = dir_checker(self.config["val"]["output_dir"])
 
         if self.config["train"]["model_ckpt"] is not None:
-            # checkpoint = torch.load(self.config["train"]["model_ckpt"])
-            # checkpoint.pop('fc.weight', None)
+            checkpoint = torch.load(self.config["train"]["model_ckpt"])
+            checkpoint.pop('conv1.weight', None)
             # checkpoint.pop('fc.bias', None)
-            self.model.load_state_dict(torch.load(self.config["train"]["model_ckpt"]), strict=False)
+            self.model.load_state_dict(checkpoint, strict=False)
             logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
 
         self.t_loader = dataloader_factory(config=self.config, data_split="train")
@@ -219,8 +219,10 @@ class TrainModule:
                     name="log_steps",
                     use_wandb=self.config["use_wandb"]
                 )
-            if step % self.config["train"]["lr_update_steps"] == 0:
+            if (step+1) % self.config["train"]["lr_update_steps"] == 0:
                 self.scheduler.step()
+            if (step+1) % self.config["val"]["val_period"] == 0:
+                self.validation_procedure()
 
         train_loss = torch.tensor(train_loss_list)
         train_cls_loss = torch.tensor(train_cls_loss_list)
