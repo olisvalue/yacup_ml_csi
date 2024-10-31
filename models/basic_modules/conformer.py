@@ -550,32 +550,39 @@ class Conv2dSubsampling8(BaseSubsampling):
     x, pos_emb = self.pos_enc(x, offset)
     return x, pos_emb, x_mask[:, :, :-2:2][:, :, :-2:2][:, :, :-2:2]
 
-class Conv2dUpsampling4(BaseSubsampling):
-    """Convolutional 2D upsampling (to 4x length)."""
+import torch
+from typing import Tuple, Union
 
-    def __init__(self, idim: int, odim: int, dropout_rate: float,
-                 pos_enc_class: torch.nn.Module):
-        """Construct a Conv2dUpsampling4 object."""
+class Conv2dTemporalExpansion(BaseSubsampling):
+    """Convolutional 2D with temporal expansion using transposed convolutions.
+
+    Args:
+        idim (int): Input dimension.
+        odim (int): Output dimension.
+        expansion_factor (int): Factor by which to expand the temporal axis.
+        dropout_rate (float): Dropout rate.
+        pos_enc_class (torch.nn.Module): Positional encoding class.
+    """
+
+    def __init__(self, idim: int, odim: int, dropout_rate: float, pos_enc_class: torch.nn.Module):
+        """Construct a Conv2dTemporalExpansion object."""
         super().__init__()
-        
+        self.expansion_factor = 2
         self.conv = torch.nn.Sequential(
-            torch.nn.ConvTranspose2d(1, odim, 3, 2, output_padding=1),
+            torch.nn.Conv2d(1, odim, 3, stride=1, padding=1),
             torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(odim, odim, 3, 2, output_padding=1),
+            torch.nn.Conv2d(odim, odim, 3, stride=1, padding=1),
             torch.nn.ReLU(),
+            torch.nn.ConvTranspose2d(odim, odim, kernel_size=(self.expansion_factor, 1),
+                                     stride=(self.expansion_factor, 1), padding=(0, 0)),
         )
-
-        dummy_input = torch.randn(1, 1, idim, idim)
-        dummy_output = self.conv(dummy_input)
-        _, _, t_out, f_out = dummy_output.size()
-        
         self.out = torch.nn.Sequential(
-            torch.nn.Linear(odim * t_out * f_out, odim)
+            torch.nn.Linear(odim * idim, odim),
+            torch.nn.Dropout(dropout_rate)
         )
-        
         self.pos_enc = pos_enc_class
-        self.upsampling_rate = 4
-        self.right_context = 6
+        self.subsampling_rate = 1
+        self.right_context = 0  
 
     def forward(
         self,
@@ -583,24 +590,32 @@ class Conv2dUpsampling4(BaseSubsampling):
         x_mask: torch.Tensor,
         offset: Union[int, torch.Tensor] = 0
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Upsample x.
+        """Pass-through with temporal expansion.
 
         Args:
             x (torch.Tensor): Input tensor (#batch, time, idim).
             x_mask (torch.Tensor): Input mask (#batch, 1, time).
 
         Returns:
-            torch.Tensor: Upsampled tensor (#batch, time' * 4, odim).
+            torch.Tensor: Tensor with expanded temporal length (#batch, time * expansion_factor, odim).
             torch.Tensor: Updated positional encoding.
-            torch.Tensor: Mask with unchanged temporal length.
-
+            torch.Tensor: Mask with expanded temporal length.
         """
         x = x.unsqueeze(1)  # (batch, channel=1, time, idim)
-        x = self.conv(x)
+        x = self.conv(x)  # Apply convolution and temporal expansion
         b, c, t, f = x.size()
+        
+        # Reshape for linear transformation
         x = self.out(x.transpose(1, 2).contiguous().view(b, t, c * f))
+        
+        # Update positional encoding with expanded sequence length
         x, pos_emb = self.pos_enc(x, offset)
-        return x, pos_emb, x_mask.repeat_interleave(4, dim=-1)
+        
+        # Expand mask as well to match temporal length
+        x_mask = x_mask.repeat_interleave(self.expansion_factor, dim=2)
+        
+        return x, pos_emb, x_mask
+
 
 
 
@@ -1290,7 +1305,7 @@ class ConformerEncoder(torch.nn.Module):
     elif input_layer == "conv2d_nosub":
       subsampling_class = Conv2dNoSubsampling
     elif input_layer == "conv2d_upsample4":
-      subsampling_class = Conv2dUpsampling4
+      subsampling_class = Conv2dTemporalExpansion
     else:
       raise ValueError("unknown input_layer: " + input_layer)
     logging.info("Input layers - {}".format(input_layer))
