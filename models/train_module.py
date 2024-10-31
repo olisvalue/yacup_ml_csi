@@ -1,6 +1,5 @@
 import logging
 import wandb
-wandb.init(project="yacup_ml_nopool_lowstride")
 
 import os
 from copy import deepcopy
@@ -16,6 +15,7 @@ from tqdm import tqdm, trange
 from models.data_model import BatchDict, Postfix, TestResults, ValDict
 from models.early_stopper import EarlyStopper
 from models.modules import Bottleneck, Resnet50, TransformerEncoderModel
+from models.new_modules import Model
 from models.utils import (
     calculate_ranking_metrics,
     calculate_ranking_metrics_batched,
@@ -66,12 +66,14 @@ class TrainModule:
         self.max_len = 50
 
         # self.model = get_dymn(pretrained_name="dymn10_as", num_classes=self.num_classes)
-        self.model = Resnet50(
-            Bottleneck,
-            num_channels=self.config["num_channels"],
-            num_classes=self.num_classes,
-            dropout=self.config["train"]["dropout"]
-        )
+        # self.model = Resnet50(
+        #     Bottleneck,
+        #     num_channels=self.config["num_channels"],
+        #     num_classes=self.num_classes,
+        #     dropout=self.config["train"]["dropout"]
+        # )
+
+        self.model = Model(config)
         self.model.to(self.config["device"])
 
         # for name, param in self.model.named_parameters():
@@ -117,7 +119,7 @@ class TrainModule:
 
         if self.config["train"]["model_ckpt"] is not None:
             checkpoint = torch.load(self.config["train"]["model_ckpt"])
-            checkpoint.pop('conv1.weight', None)
+            # checkpoint.pop('conv1.weight', None)
             # checkpoint.pop('fc.bias', None)
             self.model.load_state_dict(checkpoint, strict=False)
             logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')

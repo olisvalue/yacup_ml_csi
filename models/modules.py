@@ -133,7 +133,7 @@ class Resnet50(nn.Module):
         )
         self.batch_norm1 = nn.BatchNorm2d(num_features=64)
         self.relu = nn.ReLU()
-        # self.max_pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.max_pool1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         self.layer1 = self._make_layer(ResBlock, blocks=3, planes=64, stride=1)
         self.layer2 = self._make_layer(ResBlock, blocks=4, planes=128, stride=2)
@@ -171,7 +171,7 @@ class Resnet50(nn.Module):
         x = self.conv1(x.unsqueeze(1))
         x = self.batch_norm1(x)
         x = self.relu(x)
-        # x = self.max_pool1(x)
+        x = self.max_pool1(x)
         # print(f"inside resnet 50. before layer 1, x has shape {x.shape}")
 
         x = self.layer1(x)

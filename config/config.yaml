@@ -5,13 +5,16 @@ debug: True
 progress_bar: True
 device: "cuda:0"
 num_channels: 1
-embed_dim: 2048
+# embed_dim: 2048
+# embed_dim: 128
+embed_dim: 256
+# Осторожно, embed_dim = 128 для Conformer (base)!
 use_wandb: True
 
 seed: 1234
 
 ce:
-  output_dims: 30000
+  output_dims: 39535
   weight: 1.0
   gamma: 2
 
@@ -22,6 +25,16 @@ triplet:
 center:
   weight: 0.01
 
+conformer:
+  input_dim: 84
+  output_dims: 128
+  attention_dim: 256
+  num_blocks: 6
+  # input_layer: conv2d_nosub
+  input_layer: conv2d_nosub
+
+
+
 train:
   dataset_path: "/home/olisvalue/contests/baseline/data/train"
   mixed_precision: True
@@ -29,8 +42,11 @@ train:
   triplet_margin: 0.3
   smooth_factor: 0.1
   dropout: 0.1
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
-  batch_size: 150
+  model_ckpt:
+  # model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
+  batch_size: 256
+  # batch_size: 150
+
   num_workers: 0
   shuffle: True
   drop_last: True
@@ -42,7 +58,9 @@ train:
   adam_b2: 0.99
   lr_decay: 0.95
   min_lr: 0.0001
-  lr_update_steps: 550
+  # lr_update_steps: 550
+  lr_update_steps: 1000
+  # надо бы 1000 для conformer
 
   patience: 4
   log_steps: 10
@@ -52,17 +70,17 @@ val:
   dataset_path: "/home/olisvalue/contests/baseline/data/train"
   save_val_outputs: True
   max_seq_len: -1
-  batch_size: 200
+  batch_size: 150
   num_workers: 0
   shuffle: False
   drop_last: False
   output_dir: "outputs_val"
-  val_period: 600
+  val_period: 470
 
 test:
   dataset_path: "/home/olisvalue/contests/baseline/data/test"
   save_test_outputs: True
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-42/model/best-model-epoch=5-max_secs=50.pt"
+  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-55/model/conformer_nosubsample.pt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0
