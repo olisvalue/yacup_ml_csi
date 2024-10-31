@@ -49,6 +49,7 @@ class UserDefineExponentialLR(torch.optim.lr_scheduler._LRScheduler):
       lr[0] = lr[0] if lr[0] > self.min_lr else self.min_lr
     else:
       local_step = self.optimizer._step_count
+      # local_step = self.optimizer.state.get('step', 0)
       lr = [group['lr'] for group in self.optimizer.param_groups]
       if local_step <= self._warmup_steps + 1:
         lr[0] = self.base_lrs[0] * local_step / self._warmup_steps

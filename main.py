@@ -1,5 +1,5 @@
 import wandb
-wandb.init(project="yacup_ml_conformer_upsample256")
+wandb.init(project="yacup_ml_conformer_pretrained")
 
 from models.train_module import TrainModule
 from utils import initialize_logging, load_config

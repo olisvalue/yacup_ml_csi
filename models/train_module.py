@@ -108,7 +108,8 @@ class TrainModule:
         self.optimizer = self.configure_optimizers()
         self.scheduler = UserDefineExponentialLR(
                 optimizer=self.optimizer, gamma=config["train"]["lr_decay"],
-                min_lr=config["train"]["min_lr"], last_epoch=-1)
+                min_lr=config["train"]["min_lr"], last_epoch=-1,
+                warmup=config["train"]["warmup"], warmup_steps=config["train"]["warmup_steps"])
 
         if self.config["device"] != "cpu":
             #self.scaler = torch.cuda.amp.GradScaler(enabled=self.config["train"]["mixed_precision"])
@@ -118,10 +119,25 @@ class TrainModule:
         self.config["val"]["output_dir"] = dir_checker(self.config["val"]["output_dir"])
 
         if self.config["train"]["model_ckpt"] is not None:
+            # checkpoint = torch.load(self.config["train"]["model_ckpt"])
+            # self.model.load_state_dict(checkpoint, strict=False)
+            # logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
             checkpoint = torch.load(self.config["train"]["model_ckpt"])
-            # checkpoint.pop('conv1.weight', None)
-            # checkpoint.pop('fc.bias', None)
-            self.model.load_state_dict(checkpoint, strict=False)
+            # ignore_list = ["_global_cmvn.weight", "_global_cmvn.bias", "_global_cmvn.running_mean",
+            #             "_global_cmvn.running_var", "_encoder.embed.out.0.weight", "_bottleneck.weight",
+            #             "_bottleneck.bias", "_bottleneck.running_mean", "_bottleneck.running_var",
+            #             "_pool_layer._final_layer.weight", "_ce_layer.weight"]
+            # for name in tuple(checkpoint.keys()):
+            #     if name in ignore_list:
+            #         print(f"{name} was deleted")
+            #         checkpoint.pop(name, None)
+            # for name, param in self.model.named_parameters():
+            #     if name not in ignore_list:
+            #         param.requires_grad = False
+            #     else:
+            #         print(f"not freeze {name}")
+            
+            self.model.load_state_dict(checkpoint, strict=True)
             logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
 
         self.t_loader = dataloader_factory(config=self.config, data_split="train")

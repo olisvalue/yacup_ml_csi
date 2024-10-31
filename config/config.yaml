@@ -6,8 +6,8 @@ progress_bar: True
 device: "cuda:0"
 num_channels: 1
 # embed_dim: 2048
-embed_dim: 128
-# embed_dim: 256
+# embed_dim: 128
+embed_dim: 256
 # Осторожно, embed_dim = 128 для Conformer (base)!
 use_wandb: True
 
@@ -27,6 +27,7 @@ center:
 
 conformer:
   input_dim: 84
+  # input_dim: 96
   output_dims: 128
   # attention_dim: 512
   attention_dim: 256
@@ -37,16 +38,18 @@ conformer:
 
 
 train:
+  warmup: False
+  warmup_steps: 400
   dataset_path: "/home/olisvalue/contests/baseline/data/train"
   mixed_precision: True
   num_classes: 39535
   triplet_margin: 0.3
   smooth_factor: 0.1
   dropout: 0.1
-  model_ckpt:
-  # model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-11/model/best-model-epoch=4-max_secs=50.pt"
-  # batch_size: 256
-  batch_size: 150
+  # model_ckpt:
+  model_ckpt: "/home/olisvalue/contests/baseline/pretrained.pt"
+  batch_size: 256
+  # batch_size: 150
 
   num_workers: 0
   shuffle: True
