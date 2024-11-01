@@ -149,6 +149,9 @@ class TrainModule:
             self.config["train"]["epochs"], disable=(not self.config["progress_bar"]), position=0, leave=True
         )
         for epoch in self.pbar:
+            if self.config["augmentations"]:
+                logger.info("! USING AUGMENTATIONS  !")
+
             if self.state in ["early_stopped", "interrupted", "finished"]:
                 return
 
@@ -174,6 +177,8 @@ class TrainModule:
         self.state = "finished"
 
     def validate(self) -> None:
+        if self.config["augmentations"] == True:
+            logger.info("!!!!!!!!!!!!! USING AUGMENTATIONS ON VALIDATION SET !!!!!!!!!!!!")
         self.v_loader = dataloader_factory(config=self.config, data_split="val")
         self.state = "running"
         self.validation_procedure()
@@ -186,7 +191,7 @@ class TrainModule:
             self.model.load_state_dict(torch.load(self.best_model_path), strict=False)
             logger.info(f"Best model loaded from checkpoint: {self.best_model_path}")
         elif self.config["test"]["model_ckpt"] is not None:
-            self.model.load_state_dict(torch.load(self.config["test"]["model_ckpt"]), strict=False)
+            self.model.load_state_dict(torch.load(self.config["test"]["model_ckpt"]), strict=True)
             logger.info(f'Model loaded from checkpoint: {self.config["test"]["model_ckpt"]}')
         elif self.state == "initializing":
             logger.warning("Warning: Testing with random weights")

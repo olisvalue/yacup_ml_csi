@@ -228,7 +228,7 @@ class Model(BasicModel):
 
   def forward(self, x: torch.Tensor):
     """feat[b, frame_size, feat_size] -> embed[b, embed_dim]"""
-    x = x.permute(0, 2, 1)
+    # x = x.permute(0, 2, 1)
     # print(f"input is:", x)
     # print(f"input has shape of {x.shape} after swap 2 and 1 dims")
 

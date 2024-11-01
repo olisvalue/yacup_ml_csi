@@ -14,7 +14,7 @@ from models.data_loader import cover_dataloader
 from models.data_model import Postfix
 
 import wandb
-
+from typing import Literal
 
 class Zero:
     def __init__(self):
@@ -29,15 +29,16 @@ def reduce_func(D_chunk, start):
     nearest_items = np.argsort(D_chunk, axis=1)[:, :top_size + 1]
     return [(i, items[items!=i]) for i, items in enumerate(nearest_items, start)]
 
-def dataloader_factory(config: Dict, data_split: str) -> List[DataLoader]:
+def dataloader_factory(config: Dict, data_split: Literal['train', 'val', 'test']) -> DataLoader:
     return cover_dataloader(
         data_path=config["data_path"],
         file_ext=config["file_extension"],
-        # dataset_path=config[data_split]["dataset_path"],
+        dataset_path=config[data_split]["dataset_path"],
         data_split=data_split,
         debug=config["debug"],
         max_len=50,
-        **config[data_split]
+        batch_size=config[data_split]["batch_size"],
+        config = config
     )
 
 def calculate_ranking_metrics(embeddings: np.ndarray, cliques: List[int]) -> Tuple[np.ndarray, np.ndarray]:

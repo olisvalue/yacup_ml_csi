@@ -1,4 +1,37 @@
 data_path: "/home/olisvalue/contests/baseline/data"
+augmentations: True
+
+aug_params:
+  volume: True
+  roll_pitch: True
+  random_erase: True
+  time_masking: True
+  equalize: True
+  random_time_crop: True
+
+  roll_shift_num: 10
+
+  region_val: -80
+
+  mask_region_num: 4
+  mask_region_size: [0.25, 0.1]
+
+  equalize_low_factor: 0.7
+  equalize_high_factor: 1.1
+
+  low_tempo_factor: 0.8
+  high_tempo_factor: 1.2
+
+  num_time_masks: 1
+  max_time_mask_size: 6
+
+  min_chunk: 25
+  max_chunk: 50
+  
+
+
+seed: 2024
+
 file_extension: "npy"
 save_model_path: "models"
 debug: True
@@ -10,8 +43,6 @@ num_channels: 1
 embed_dim: 256
 # Осторожно, embed_dim = 128 для Conformer (base)!
 use_wandb: True
-
-seed: 1234
 
 ce:
   output_dims: 39535
@@ -30,8 +61,8 @@ conformer:
   # input_dim: 96
   output_dims: 128
   # attention_dim: 512
-  attention_dim: 512
-  num_blocks: 8
+  attention_dim: 256
+  num_blocks: 6
   input_layer: conv2d_nosub
   # input_layer: conv2d_upsample4
 
@@ -75,7 +106,7 @@ val:
   dataset_path: "/home/olisvalue/contests/baseline/data/train"
   save_val_outputs: True
   max_seq_len: -1
-  batch_size: 150
+  batch_size: 100
   num_workers: 0
   shuffle: False
   drop_last: False
@@ -85,7 +116,7 @@ val:
 test:
   dataset_path: "/home/olisvalue/contests/baseline/data/test"
   save_test_outputs: True
-  model_ckpt: "/home/olisvalue/contests/baseline/outputs_val/run-59/model/best-model-epoch=11-max_secs=50.pt"
+  model_ckpt: "/home/olisvalue/contests/baseline/best-model-epoch=11-max_secs=50.pt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0
