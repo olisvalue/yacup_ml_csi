@@ -121,8 +121,9 @@ class CoverDataset(Dataset):
         shift_num = self.config["aug_params"]["roll_shift_num"]
         w, h = np.shape(cqt_spec)
         shift_amount = random.randint(-1, 1) * shift_num
-        for i in range(w):
-            cqt_spec[i, :] = np.roll(cqt_spec[i, :], shift_amount)
+        # for i in range(w):
+        #     cqt_spec[i, :] = np.roll(cqt_spec[i, :], shift_amount)
+        cqt_spec = np.roll(cqt_spec, shift_amount, axis=1)
         return cqt_spec
 
     def _random_erase(self, cqt_spec):
@@ -135,15 +136,22 @@ class CoverDataset(Dataset):
         # print(region_size[1])
         # print('*'*50)
 
-        region_val = self.config["aug_params"]["region_val"]
+        region_val = random.random() * self.config["aug_params"]["region_val"]
         w, h = np.shape(cqt_spec)
         region_w = int(w * region_size[0])
         region_h = int(h * region_size[1])
-        for _ in range(region_num):
-            center_w = int(random.random() * (w - region_w))
-            center_h = int(random.random() * (h - region_h))
-            cqt_spec[center_w - region_w // 2:center_w + region_w // 2,
-            center_h - region_h // 2:center_h + region_h // 2] = region_val
+
+        centers = np.random.rand(region_num, 2)
+        centers[:, 0] *= (w - region_w)
+        centers[:, 1] *= (h - region_h)
+        for center_w, center_h in centers:
+            cqt_spec[int(center_w - region_w // 2):int(center_w + region_w // 2),
+                    int(center_h - region_h // 2):int(center_h + region_h // 2)] = region_val
+        # for _ in range(region_num):
+        #     center_w = int(random.random() * (w - region_w))
+        #     center_h = int(random.random() * (h - region_h))
+        #     cqt_spec[center_w - region_w // 2:center_w + region_w // 2,
+        #     center_h - region_h // 2:center_h + region_h // 2] = region_val
         return cqt_spec
     
     def _random_time_crop(self, cqt_spec, chunk_len):
@@ -155,7 +163,7 @@ class CoverDataset(Dataset):
         return cqt_spec
     
     def _change_volume(self, cqt_spec):
-        coef = random.uniform(0.4, 1.0)
+        coef = random.uniform(self.config["aug_params"]["low_volume_coef"], self.config["aug_params"]["high_volume_coef"])
         return cqt_spec * coef
     
     def _change_tempo_cqt(self, cqt_spec: np.ndarray) -> np.ndarray:
@@ -212,7 +220,14 @@ class CoverDataset(Dataset):
             cqt_spec[mask_start:mask_start + mask_length, :] = region_val
 
         return cqt_spec
-        
+    
+    # def _apply_padding(self, cqt_spec):
+    #     w, h = np.shape(cqt_spec)
+    #     padding_value = self.config["aug_params"]["pad_value"]
+    #     if w > self.max_len:
+
+
+    
     def _apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
         """
         Args:
@@ -230,34 +245,49 @@ class CoverDataset(Dataset):
         # if "time_stretching" in self.config['aug_params'].keys():
         #     self._change_tempo_cqt(cqt_spec)
 
+        if "roll_pitch" in self.config["aug_params"] and self.config["aug_params"]["roll_pitch"]:
+            p = random.random()
+            if p <= self.config["aug_params"]["roll_pitch_prob"]:
+                # print("roll")
+                cqt_spec = self._roll(cqt_spec)
+
         if "volume" in self.config["aug_params"] and self.config["aug_params"]["volume"]:
             # print("volume")
-            cqt_spec = self._change_volume(cqt_spec)
+            p = random.random()
+            if p <= self.config["aug_params"]["volume_prob"]:
+                # print("roll")
+                cqt_spec = self._change_volume(cqt_spec)
 
-        if "equalize" in self.config["aug_params"] and self.config['aug_params']["equalize"]:
+        if "equalize" in self.config["aug_params"] and self.config["aug_params"]["equalize"]:
             # print("equalize")
-            cqt_spec = self._apply_equalize(cqt_spec)
-        
-        if "roll_pitch" in self.config["aug_params"] and self.config["aug_params"]["roll_pitch"]:
-            # print("roll_pitch")
-            cqt_spec = self._roll(cqt_spec)
-        
+            p = random.random()
+            if p <= self.config["aug_params"]["equalize_prob"]:
+                cqt_spec = self._apply_equalize(cqt_spec)
+
+
         # if "add_noise" in self.config['aug_params'].keys():
         #     None
 
         if "time_masking" in self.config["aug_params"] and self.config["aug_params"]["time_masking"]:
-            # print("time_masking")
-            cqt_spec = self._time_mask(cqt_spec)
+            p = random.random()
+            if p <= self.config["aug_params"]["time_mask_prob"]:
+                # print("time_masking")
+                cqt_spec = self._time_mask(cqt_spec)
 
         if "random_time_crop" in self.config["aug_params"] and self.config["aug_params"]["random_time_crop"]:
-            # print("random_time_crop")
-            cqt_spec = self._random_time_crop(cqt_spec, self.chunk_len)
+            p = random.random()
+            if p <= self.config["aug_params"]["random_timecrop_prob"]:
+                # print("random_time_crop")
+                cqt_spec = self._random_time_crop(cqt_spec, self.chunk_len)
 
+        
         if "random_erase" in self.config["aug_params"] and self.config["aug_params"]["random_erase"]:
-            # print("random_erase")
-            cqt_spec = self._random_erase(cqt_spec)
+            p = random.random()
+            if p <= self.config["aug_params"]["random_erase_prob"]:
+                # print("random_erase")
+                cqt_spec = self._random_erase(cqt_spec)
 
-    
+        # cqt_spec = self._apply_padding(cqt_spec)
 
         # time_stretching - легкое сужение или растяжение по временной оси
         return cqt_spec
@@ -272,42 +302,13 @@ class CoverDataset(Dataset):
             # print("!!!!!!!!!!!!!!USE AUGMENTATIONS!!!!!!!!!!!!!!")
             cqt_spectrogram = self._apply_augmentations(cqt_spectrogram)
 
-        return torch.from_numpy(cqt_spectrogram).to(torch.float16)
+        return torch.from_numpy(cqt_spectrogram).float()
 
 
 
 
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from typing import Literal, Dict
 import random
-
-class RandomChunkBatchSampler(torch.utils.data.BatchSampler):
-    def __init__(self, dataset, sampler, batch_size, drop_last, min_chunk, max_chunk):
-        super().__init__(sampler, batch_size, drop_last)
-        self.dataset = dataset
-        self.min_chunk = min_chunk
-        self.max_chunk = max_chunk
-
-    def __iter__(self):
-        for batch_indices in super().__iter__():
-            # Устанавливаем случайный chunk_len для текущего батча
-            chunk_len = random.randint(self.min_chunk, self.max_chunk)
-            self.dataset.set_chunk_len(chunk_len)
-            yield batch_indices
-
-# Определим collate_fn для корректной обработки батча
-def collate_fn(batch):
-    batch_data = {
-        "anchor_id": [item["anchor_id"] for item in batch],
-        "anchor": torch.stack([item["anchor"] for item in batch]),
-        "anchor_label": torch.stack([item["anchor_label"] for item in batch]),
-        "positive_id": [item["positive_id"] for item in batch],
-        "positive": torch.stack([item["positive"] for item in batch]),
-        "negative_id": [item["negative_id"] for item in batch],
-        "negative": torch.stack([item["negative"] for item in batch]),
-        "negative_label": torch.stack([item["negative_label"] for item in batch]),
-    }
-    return batch_data
 
 def cover_dataloader(
     data_path: str,
@@ -319,26 +320,13 @@ def cover_dataloader(
     batch_size: int,
     config: Dict,
 ) -> DataLoader:
-    dataset = CoverDataset(data_path, file_ext, dataset_path,
-                      data_split, debug, max_len=max_len, config=config)
-    min_chunk, max_chunk = config["aug_params"]["min_chunk"], config["aug_params"]["max_chunk"]
-
-    base_sampler = RandomSampler(dataset) if data_split == "train" else SequentialSampler(dataset)
-    
-    batch_sampler = RandomChunkBatchSampler(
-        dataset=dataset,
-        sampler=base_sampler,
-        batch_size=batch_size,
-        drop_last=True,
-        min_chunk=min_chunk,
-        max_chunk=max_chunk,
-    )
-
     return DataLoader(
-        dataset=dataset,
-        batch_sampler=batch_sampler,
-        collate_fn=collate_fn,  # Используем кастомную функцию collate_fn
+        CoverDataset(data_path, file_ext, dataset_path,
+                      data_split, debug, max_len=max_len, config=config),
+        batch_size=batch_size if max_len > 0 else 1,
         num_workers=config[data_split]["num_workers"],
+        shuffle=config[data_split]["shuffle"],
+        drop_last=config[data_split]["drop_last"]
     )
 
 

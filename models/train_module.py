@@ -177,8 +177,8 @@ class TrainModule:
         self.state = "finished"
 
     def validate(self) -> None:
-        if self.config["augmentations"] == True:
-            logger.info("!!!!!!!!!!!!! USING AUGMENTATIONS ON VALIDATION SET !!!!!!!!!!!!")
+        # if self.config["augmentations"] == True:
+        #     logger.info("!!!!!!!!!!!!! USING AUGMENTATIONS ON VALIDATION SET !!!!!!!!!!!!")
         self.v_loader = dataloader_factory(config=self.config, data_split="val")
         self.state = "running"
         self.validation_procedure()

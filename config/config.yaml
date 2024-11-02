@@ -3,11 +3,17 @@ augmentations: True
 
 aug_params:
   volume: True
-  roll_pitch: True
-  random_erase: True
-  time_masking: True
-  equalize: True
-  random_time_crop: True
+  volume_prob: 1.0
+  # roll_pitch: True
+  # random_erase: True
+  # time_masking: True
+  # equalize: True
+  # random_time_crop: True
+
+  low_volume_coef: 0.6
+  high_volume_coef: 1.0
+
+  pad_value: -80
 
   roll_shift_num: 10
 
@@ -25,7 +31,7 @@ aug_params:
   num_time_masks: 1
   max_time_mask_size: 6
 
-  min_chunk: 25
+  min_chunk: 30
   max_chunk: 50
   
 
@@ -116,7 +122,8 @@ val:
 test:
   dataset_path: "/home/olisvalue/contests/baseline/data/test"
   save_test_outputs: True
-  model_ckpt: "/home/olisvalue/contests/baseline/best-model-epoch=11-max_secs=50.pt"
+  model_ckpt: 
+  # model_ckpt: "/home/olisvalue/contests/baseline/best-model-epoch=11-max_secs=50.pt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0
