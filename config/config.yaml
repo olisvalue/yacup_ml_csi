@@ -1,38 +1,60 @@
 data_path: "/home/olisvalue/contests/baseline/data"
 augmentations: True
+store_data_in_ram: False
 
 aug_params:
-  volume: True
-  volume_prob: 1.0
+  # notes: volume is definetely good augmentation
+  # volume: True
+  # volume_prob: 1.0
   # roll_pitch: True
-  # random_erase: True
-  # time_masking: True
-  # equalize: True
-  # random_time_crop: True
 
-  low_volume_coef: 0.6
+  # time_roll: True
+  # time_roll_prob: 1.0
+
+
+  # time_stretch: True
+  # time_stretch_prob: 1.0
+
+  # random_erase: True
+
+  mask_silence: True
+  mask_silence_prob: 0.1
+
+  # time_masking: True
+
+  # equalize: True
+  # equalize_prob: 1.0
+
+  # random_time_crop: True
+  # random_timecrop_prob: 1.0
+
+  crop_min_chunklen: 25
+  crop_max_chunklen: 50
+
+  low_volume_coef: 0.5
   high_volume_coef: 1.0
 
   pad_value: -80
 
   roll_shift_num: 10
 
+  min_timeroll_shift_num: -12
+  max_timeroll_shift_num: 12
+
   region_val: -80
 
   mask_region_num: 4
   mask_region_size: [0.25, 0.1]
 
-  equalize_low_factor: 0.7
-  equalize_high_factor: 1.1
+  equalize_low_factor: 0.70
+  equalize_high_factor: 1.15
 
-  low_tempo_factor: 0.8
-  high_tempo_factor: 1.2
+  low_stretch_factor: 0.8
+  high_stretch_factor: 1.2
 
   num_time_masks: 1
   max_time_mask_size: 6
 
-  min_chunk: 30
-  max_chunk: 50
   
 
 

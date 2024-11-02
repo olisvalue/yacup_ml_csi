@@ -3,7 +3,7 @@ import random
 import torch
 import numpy as np
 
-wandb.init(project="yacup_ml_conformer_aug_again_roll_volume")
+wandb.init(project="yacup_ml_conformer_masksilenceonly")
 
 from models.train_module import TrainModule
 from utils import initialize_logging, load_config

@@ -31,7 +31,6 @@ class CoverDataset(Dataset):
         super().__init__()
         self.config = config
         self.augmentations = config["augmentations"]
-        self.chunk_len = -1
 
         self.data_path = data_path
         self.file_ext = file_ext
@@ -40,10 +39,15 @@ class CoverDataset(Dataset):
         self.debug = debug
         self.max_len = max_len
         self._load_data()
+
+        self.ram_storage = config.get("store_data_in_ram", False)
+        if self.ram_storage:
+            self.all_cqt_specs = dict()
+            self._load_all_cqt()
+
         self.rnd_indices = np.random.permutation(len(self.track_ids))
         self.current_index = 0
-    def set_chunk_len(self, chunk_len):
-        self.chunk_len = chunk_len
+
     def __len__(self) -> int:
         return len(self.track_ids)
 
@@ -125,17 +129,21 @@ class CoverDataset(Dataset):
         #     cqt_spec[i, :] = np.roll(cqt_spec[i, :], shift_amount)
         cqt_spec = np.roll(cqt_spec, shift_amount, axis=1)
         return cqt_spec
+    
+    def _time_roll(self, cqt_spec):
+        min_timeroll_shift_num = self.config["aug_params"]["min_timeroll_shift_num"]
+        max_timeroll_shift_num = self.config["aug_params"]["max_timeroll_shift_num"]
+        shift_num = random.randint(min_timeroll_shift_num, max_timeroll_shift_num)
+        w, h = np.shape(cqt_spec)
+        # shift_amount = random.randint(-1, 1) * shift_num
+        # for i in range(w):
+        #     cqt_spec[i, :] = np.roll(cqt_spec[i, :], shift_amount)
+        cqt_spec = np.roll(cqt_spec, shift_num, axis=0)
+        return cqt_spec
 
     def _random_erase(self, cqt_spec):
         region_num = self.config["aug_params"]["mask_region_num"]
-        # print('*'*50)
         region_size = self.config["aug_params"]["mask_region_size"]
-        # print("проверь, что правильно загружается region_size")
-        # print(region_size)
-        # print(region_size[0])
-        # print(region_size[1])
-        # print('*'*50)
-
         region_val = random.random() * self.config["aug_params"]["region_val"]
         w, h = np.shape(cqt_spec)
         region_w = int(w * region_size[0])
@@ -154,9 +162,10 @@ class CoverDataset(Dataset):
         #     center_h - region_h // 2:center_h + region_h // 2] = region_val
         return cqt_spec
     
-    def _random_time_crop(self, cqt_spec, chunk_len):
+    def _random_time_crop(self, cqt_spec):
         # chunk_len should be equal for all objects in batch.
-        # chunk_len = random.choice(self.config["aug_params"]["crop_chunk_len"])   
+        chunk_len = random.randint(self.config["aug_params"]["crop_min_chunklen"],
+                                   self.config["aug_params"]["crop_max_chunklen"] )   
         cqt_spec_len, h = np.shape(cqt_spec)
         start = int(random.random() * (cqt_spec_len - chunk_len))
         cqt_spec = cqt_spec[start:start + chunk_len]
@@ -166,33 +175,28 @@ class CoverDataset(Dataset):
         coef = random.uniform(self.config["aug_params"]["low_volume_coef"], self.config["aug_params"]["high_volume_coef"])
         return cqt_spec * coef
     
-    def _change_tempo_cqt(self, cqt_spec: np.ndarray) -> np.ndarray:
+    def _time_stretching(self, cqt_spec: np.ndarray) -> np.ndarray:
         """
         Изменяет темп CQT-спектрограммы путем интерполяции по временной оси.
 
         Args:
-            cqt_spectrogram: np.ndarray
-            tempo_factor (float): coef > 0 of stretching.
+            cqt_spec: np.ndarray
 
         Returns:
             cqt_spectrogram_stretched: np.ndarray
         """
+        low_stretch_factor = self.config["aug_params"]["low_stretch_factor"]
+        high_stretch_factor = self.config["aug_params"]["high_stretch_factor"]
+        stretch_factor = np.random.uniform(low_stretch_factor, high_stretch_factor)
 
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        # внутри батча все примеры будут получаться с разной длиной
-        # можно учесть, что все примеры будут получаться, скажем, не меньше 40 (зависит от того, насколько разрешаем ускорить)
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-        low_tempo_factor = self.config["aug_params"]["low_tempo_factor"]
-        high_tempo_factor = self.config["aug_params"]["high_tempo_factor"]
-        tempo_factor = np.random.uniform(low_tempo_factor, high_tempo_factor)
-        if tempo_factor <= 0:
-            raise ValueError("tempo_factor must be positive")
+        if stretch_factor <= 0:
+            raise ValueError(f"stretch_factor must be positive, but equals {stretch_factor}")
 
         num_frames, num_bins = cqt_spec.shape
-        new_num_frames = int(np.round(num_frames * tempo_factor))
-        cqt_stretched = zoom(cqt_spec, (1, new_num_frames / num_frames), order=3)
+        new_num_frames = int(np.round(num_frames * stretch_factor))
+        cqt_stretched = zoom(cqt_spec, (stretch_factor, 1), order=3)
         return cqt_stretched
+
     
     def _apply_equalize(self, cqt_spec, smoothness=5):
         num_bins = cqt_spec.shape[1]
@@ -221,11 +225,32 @@ class CoverDataset(Dataset):
 
         return cqt_spec
     
-    # def _apply_padding(self, cqt_spec):
-    #     w, h = np.shape(cqt_spec)
-    #     padding_value = self.config["aug_params"]["pad_value"]
-    #     if w > self.max_len:
+    def _apply_padding(self, cqt_spec):
+        w, h = np.shape(cqt_spec)
+        padding_value = self.config["aug_params"]["pad_value"]
+        
+        if w > self.max_len:
+            cqt_spec = cqt_spec[:self.max_len, :]
+        elif w < self.max_len:
+            padding_width = self.max_len - w
+            cqt_spec = np.pad(cqt_spec, ((0, padding_width), (0, 0)), 'constant', constant_values=padding_value)
+        
+        return cqt_spec
 
+    def _mask_silence(self, cqt_spec):
+        # probability should be low (0.1)
+        # if random.random() > p_threshold:
+        #     return feat
+
+        w, h = np.shape(cqt_spec)
+        for i in range(w):
+            if random.random() < 0.1:
+                cqt_spec[i, :] = self.config["aug_params"]["pad_value"]
+        for i in range(h):
+            if random.random() < 0.1:
+                cqt_spec[:, i] = self.config["aug_params"]["pad_value"]
+
+        return cqt_spec
 
     
     def _apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
@@ -241,16 +266,36 @@ class CoverDataset(Dataset):
 
         """
         # add frequency masking?
+        if "mask_silence" in self.config["aug_params"] and self.config["aug_params"]["mask_silence"]:
+            p = random.random()
+            if p <= self.config["aug_params"]["mask_silence_prob"]:
+                # print("mask_silence")
+                cqt_spec = self._mask_silence(cqt_spec)
 
-        # if "time_stretching" in self.config['aug_params'].keys():
-        #     self._change_tempo_cqt(cqt_spec)
+        if "time_stretching" in self.config["aug_params"] and self.config["aug_params"]["time_stretching"]:
+            p = random.random()
+            if p <= self.config["aug_params"]["time_stretching_prob"]:
+                # print("time_stretching")
+                cqt_spec = self._time_stretching(cqt_spec)
 
+
+        # seems like works bad ... ?
         if "roll_pitch" in self.config["aug_params"] and self.config["aug_params"]["roll_pitch"]:
             p = random.random()
             if p <= self.config["aug_params"]["roll_pitch_prob"]:
                 # print("roll")
                 cqt_spec = self._roll(cqt_spec)
 
+        # works good
+        if "time_roll" in self.config["aug_params"] and self.config["aug_params"]["time_roll"]:
+            p = random.random()
+            if p <= self.config["aug_params"]["time_roll_prob"]:
+                # print("timeroll")
+                cqt_spec = self._time_roll(cqt_spec)
+
+        # works good 
+        # low_volume_coef: 0.5
+        # high_volume_coef: 1.0
         if "volume" in self.config["aug_params"] and self.config["aug_params"]["volume"]:
             # print("volume")
             p = random.random()
@@ -258,6 +303,9 @@ class CoverDataset(Dataset):
                 # print("roll")
                 cqt_spec = self._change_volume(cqt_spec)
 
+        # works good 
+        # equalize_low_factor: 0.70
+        # equalize_high_factor: 1.15
         if "equalize" in self.config["aug_params"] and self.config["aug_params"]["equalize"]:
             # print("equalize")
             p = random.random()
@@ -278,8 +326,7 @@ class CoverDataset(Dataset):
             p = random.random()
             if p <= self.config["aug_params"]["random_timecrop_prob"]:
                 # print("random_time_crop")
-                cqt_spec = self._random_time_crop(cqt_spec, self.chunk_len)
-
+                cqt_spec = self._random_time_crop(cqt_spec)
         
         if "random_erase" in self.config["aug_params"] and self.config["aug_params"]["random_erase"]:
             p = random.random()
@@ -287,16 +334,24 @@ class CoverDataset(Dataset):
                 # print("random_erase")
                 cqt_spec = self._random_erase(cqt_spec)
 
-        # cqt_spec = self._apply_padding(cqt_spec)
+        cqt_spec = self._apply_padding(cqt_spec)
 
         # time_stretching - легкое сужение или растяжение по временной оси
         return cqt_spec
 
+    def _load_all_cqt(self):
+        for track_id in self.track_ids:
+            filename = os.path.join(self.dataset_path, self._make_file_path(track_id, self.file_ext))
+            cqt_spectrogram = np.load(filename).transpose(1, 0)
+            self.all_cqt_specs[track_id] = cqt_spectrogram
+        
     def _load_cqt(self, track_id: str) -> torch.Tensor:
-        filename = os.path.join(self.dataset_path, self._make_file_path(track_id, self.file_ext))
-        cqt_spectrogram = np.load(filename)
-        cqt_spectrogram = cqt_spectrogram.transpose(1, 0)
-
+        if self.ram_storage:
+            cqt_spectrogram = self.all_cqt_specs[track_id]
+        else:
+            filename = os.path.join(self.dataset_path, self._make_file_path(track_id, self.file_ext))
+            cqt_spectrogram = np.load(filename)
+            cqt_spectrogram = cqt_spectrogram.transpose(1, 0)
 
         if self.augmentations and self.data_split == "train":
             # print("!!!!!!!!!!!!!!USE AUGMENTATIONS!!!!!!!!!!!!!!")
