@@ -3,7 +3,7 @@ import random
 import torch
 import numpy as np
 
-wandb.init(project="yacup_ml_conformer_masksilenceonly")
+wandb.init(project="yacup_ml_conformer_duplicate")
 
 from models.train_module import TrainModule
 from utils import initialize_logging, load_config

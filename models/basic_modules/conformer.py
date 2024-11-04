@@ -553,7 +553,9 @@ class Conv2dSubsampling8(BaseSubsampling):
 import torch
 from typing import Tuple, Union
 
-class Conv2dTemporalExpansion(BaseSubsampling):
+
+
+class Conv2dTemporalExpansion2(BaseSubsampling):
     """Convolutional 2D with temporal expansion using transposed convolutions.
 
     Args:
@@ -615,7 +617,6 @@ class Conv2dTemporalExpansion(BaseSubsampling):
         x_mask = x_mask.repeat_interleave(self.expansion_factor, dim=2)
         
         return x, pos_emb, x_mask
-
 
 
 
@@ -1304,8 +1305,8 @@ class ConformerEncoder(torch.nn.Module):
       subsampling_class = Conv2dSubsampling8
     elif input_layer == "conv2d_nosub":
       subsampling_class = Conv2dNoSubsampling
-    elif input_layer == "conv2d_upsample4":
-      subsampling_class = Conv2dTemporalExpansion
+    elif input_layer == "conv2d_upsample2":
+      subsampling_class = Conv2dTemporalExpansion2
     else:
       raise ValueError("unknown input_layer: " + input_layer)
     logging.info("Input layers - {}".format(input_layer))

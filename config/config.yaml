@@ -4,56 +4,59 @@ store_data_in_ram: False
 
 aug_params:
   # notes: volume is definetely good augmentation
-  # volume: True
-  # volume_prob: 1.0
-  # roll_pitch: True
-
-  # time_roll: True
-  # time_roll_prob: 1.0
-
-
-  # time_stretch: True
-  # time_stretch_prob: 1.0
-
-  # random_erase: True
-
-  mask_silence: True
-  mask_silence_prob: 0.1
-
-  # time_masking: True
-
-  # equalize: True
-  # equalize_prob: 1.0
-
-  # random_time_crop: True
-  # random_timecrop_prob: 1.0
-
-  crop_min_chunklen: 25
-  crop_max_chunklen: 50
-
+  volume: True
+  volume_prob: 0.7
   low_volume_coef: 0.5
   high_volume_coef: 1.0
 
-  pad_value: -80
-
-  roll_shift_num: 10
-
+  time_roll: True
+  time_roll_prob: 0.5
   min_timeroll_shift_num: -12
   max_timeroll_shift_num: 12
 
-  region_val: -80
 
-  mask_region_num: 4
-  mask_region_size: [0.25, 0.1]
-
-  equalize_low_factor: 0.70
-  equalize_high_factor: 1.15
-
+  time_stretch: True
+  time_stretch_prob: 0.5
   low_stretch_factor: 0.8
   high_stretch_factor: 1.2
 
-  num_time_masks: 1
-  max_time_mask_size: 6
+  equalize: True
+  equalize_prob: 0.7
+  equalize_low_factor: 0.70
+  equalize_high_factor: 1.15
+
+  mask_silence: True
+  mask_silence_prob: 0.1
+  pad_value: -80
+
+  gaussian_noise: True
+  gaussian_noise_prob: 0.5
+  noise_levels: [0.0, 3.0]
+
+  duplicate: True
+  duplicate_prob: 0.3
+
+
+  # time_mask: True
+  # time_mask_prob: 1.0
+  # num_time_masks: 1
+  # time_mask_regionsize: [0.02, 0.20]
+
+  # low_shift: True
+  # low_shift_prob: 0.3
+  # low_shift_values: [4, 10]
+
+
+  # random_time_crop: True
+  # random_timecrop_prob: 1.0
+  # crop_min_chunklen: 25
+  # crop_max_chunklen: 50
+
+
+  # region_val: -80
+
+  # mask_region_num: 4
+  # mask_region_size: [0.25, 0.1]
 
   
 
@@ -107,7 +110,7 @@ train:
   dropout: 0.1
   model_ckpt:
   # model_ckpt: "/home/olisvalue/contests/baseline/pretrained.pt"
-  batch_size: 256
+  batch_size: 128
   # batch_size: 150
 
   num_workers: 0
@@ -119,8 +122,9 @@ train:
   # learning_rate: 0.0009
   adam_b1: 0.8
   adam_b2: 0.99
-  lr_decay: 0.97
-  # lr_decay: 0.9975 - может быть, увеличить до этого значения?
+  lr_decay: 0.99
+  # lr_decay: 0.98
+  # lr_decay: 0.9975
   min_lr: 0.0001
   # lr_update_steps: 550
   lr_update_steps: 1000
@@ -139,7 +143,8 @@ val:
   shuffle: False
   drop_last: False
   output_dir: "outputs_val"
-  val_period: 470
+  # val_period: 470
+  val_period: 800
 
 test:
   dataset_path: "/home/olisvalue/contests/baseline/data/test"

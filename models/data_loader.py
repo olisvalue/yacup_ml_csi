@@ -210,20 +210,67 @@ class CoverDataset(Dataset):
         # print(eq_curve)
         # print(cqt_spec.shape)
         return cqt_spec * eq_curve
-    
+
+    def add_frequency_weighted_noise(self, cqt_spec, shift_amount=10, boundary_content=None):
+        """
+        Добавляет частотно-зависимый шум к CQT-спектрограмме.
+        
+        Параметры:
+        - cqt: np.array, входная CQT-спектрограмма.
+        - shift_amount: int, количество частотных шагов для добавления шума.
+        - boundary_content: np.array, значение для учета границ.
+        """
+        time_steps, freq_bins = cqt_spec.shape
+        noise = np.zeros((time_steps, shift_amount))
+
+        # Рассчитаем локальные статистики для амплитуды
+        local_maxes = np.max(cqt_spec, axis=1, keepdims=True)
+        local_means = np.mean(cqt_spec, axis=1, keepdims=True)
+        local_stds = np.std(cqt_spec, axis=1, keepdims=True)
+
+        # Итерируем по shift_amount, чтобы добавить шум
+        for i in range(shift_amount):
+            # Вычисляем вес для частотного шага, чтобы сгладить падение
+            freq_weight = np.cos(np.pi * i / (2 * shift_amount))  # Плавный спад
+
+            # Ограничения для амплитуды
+            max_allowed = local_maxes * freq_weight
+            min_allowed = local_means - local_stds
+
+            # Генерируем начальный шум
+            base_noise = np.random.normal(
+                loc=local_means,
+                scale=local_stds * (1 - freq_weight * 0.7),  # Снижение вариации рядом с границей
+                size=(time_steps, 1)
+            )
+
+            # Ограничиваем шум, чтобы он не превышал локальные амплитуды
+            base_noise = np.clip(base_noise, min_allowed, max_allowed)
+
+            # Смешиваем шум с boundary_content на основе частотной позиции
+            if boundary_content is None:
+                boundary_content = cqt[:, :shift_amount]  # Используем первые частоты, если нет конкретного значения
+
+            noise[:, i] = freq_weight * boundary_content[:, i] + (1 - freq_weight) * base_noise[:, 0]
+
+        # Добавляем шум к оригинальной спектрограмме
+        noisy_cqt = cqt_spec.copy()
+        noisy_cqt[:, :shift_amount] += noise  # Добавляем шум к shift_amount частотных диапазонов
+
+        return noisy_cqt
+
     def _time_mask(self, cqt_spec):
-        num_time_masks = self.config["aug_params"]["num_time_masks"] 
-        max_mask_size = self.config["aug_params"]["max_time_mask_size"]
-        region_val = self.config["aug_params"]["region_val"]
-
+        # num_time_masks = self.config["aug_params"]["num_time_masks"]
+        min_region, max_region = self.config["aug_params"]["time_mask_regionsize"]
+        region = random.uniform(min_region, max_region)
+        region_val = random.random() * self.config["aug_params"]["region_val"]
         w, h = np.shape(cqt_spec)
+        region_w = int(w * region)
 
-        for _ in range(num_time_masks):
-            mask_start = random.randint(0, w - max_mask_size)
-            mask_length = random.randint(1, max_mask_size)
-            cqt_spec[mask_start:mask_start + mask_length, :] = region_val
-
+        start_pos = random.randint(0, w - region_w)
+        cqt_spec[start_pos:start_pos + region_w, :] = region_val
         return cqt_spec
+
     
     def _apply_padding(self, cqt_spec):
         w, h = np.shape(cqt_spec)
@@ -252,7 +299,192 @@ class CoverDataset(Dataset):
 
         return cqt_spec
 
+    def _low_shift(self, feat, noise_scale=1.1):
+        """
+        Alternative to original _roll() method, better for strongly
+        melodic music that appears at the bottom of the CQT frequency range.
+
+        Don't shift lower in case meaningful melodic content is closer than
+        shift_num to the bottom of the sample.
+
+        Shift the spectrogram between 1 and shift_num higher in frequency bins.
+        Fill missing data at the bottom with smoothed noise that simulates the
+        local noise in each sample, and discard top-range frequency content
+        that spills outside the sample's frequency range.
+
+        Includes optional debugging / research code to visualize the resulting
+        spectrograms. Uncomment those lines if you like.
+
+        Args:
+            feat (np.array): The input spectrogram of shape (time_steps, frequency_bins).
+            shift_num (int): The maximum number of frequency bins to shift.
+            noise_scale (float): Multiplier for amplitude of spectral texture in empty region
+                Note that amplitude is negative, so quieter = higher noise_scale
+
+        Returns:
+            np.array: The pitch-transposed spectrogram.
+        """
+
+        min_shift_num, max_shift_num = self.config["aug_params"]["low_shift_values"]
+        shift_num = random.randint(min_shift_num, max_shift_num)
+
+        time_steps, freq_bins = np.shape(feat)
+        shift_amount = random.randint(1, shift_num)
+
+        if shift_amount >= freq_bins:
+            return feat
+
+        # Uncomment this line if you also uncomment the visualization code at the
+        # end of this script
+        original_feat = feat.copy()
+
+        # Debugging: Print statistics before shift
+        #        print(f"Before shift - Min: {np.min(feat)}, Max: {np.max(feat)}, Mean: {np.mean(feat)}")
+        #        print(f"shift {self.current_perf} by {shift_amount} up to {fill_max} above {min_amplitude}")
+
+        # 1. Shift the spectrogram upwards in place
+        feat[:, shift_amount:] = feat[:, : freq_bins - shift_amount]
+
+        # 2. Analyze transition boundary and local statistics
+        boundary_content = feat[:, shift_amount]
+        reference_height = min(shift_amount * 2, freq_bins - shift_amount)
+        reference_region = feat[
+            :, shift_amount : shift_amount + reference_height
+        ]
+
+        # Calculate per-time-step statistics with context
+        window_size = 3
+        padded_region = np.pad(
+            reference_region,
+            ((window_size // 2, window_size // 2), (0, 0)),
+            mode="edge",
+        )
+        local_means = np.zeros(time_steps)
+        local_stds = np.zeros(time_steps)
+        local_maxes = np.zeros(time_steps)
+
+        for i in range(time_steps):
+            window = padded_region[i : i + window_size]
+            local_means[i] = np.mean(window)
+            local_stds[i] = np.std(window)
+            local_maxes[i] = np.max(boundary_content[i : i + 1])
+
+        # 3. Generate noise base with gradual transition
+        noise = np.zeros((time_steps, shift_amount))
+
+        for i in range(shift_amount):
+            # Calculate frequency-dependent weights
+            freq_weight = np.cos(
+                np.pi * i / (2 * shift_amount)
+            )  # Smoother falloff
+
+            # Calculate amplitude bounds relative to boundary
+            max_allowed = local_maxes * freq_weight
+            min_allowed = local_means - local_stds
+
+            # Generate initial noise
+            base_noise = np.random.normal(
+                loc=local_means,
+                scale=local_stds
+                * (1 - freq_weight * 0.7),  # Reduce variation near boundary
+                size=time_steps,
+            )
+
+            # Clip noise to ensure it doesn't exceed local amplitude bounds
+            base_noise = np.clip(base_noise, min_allowed, max_allowed)
+
+            # Blend with boundary content based on frequency position
+            noise[:, i] = (
+                freq_weight * boundary_content + (1 - freq_weight) * base_noise
+            )
+
+        # 4. Apply temporal smoothing while preserving local variation
+        smoothed_noise = np.zeros_like(noise)
+        for i in range(time_steps):
+            start = max(0, i - window_size // 2)
+            end = min(time_steps, i + window_size // 2 + 1)
+            for j in range(shift_amount):
+                # Weight the smoothing based on frequency position
+                smooth_weight = 0.8 + 0.2 * (
+                    j / shift_amount
+                )  # Less smoothing near boundary
+                current = noise[i, j]
+                neighborhood = noise[start:end, j]
+                smoothed = np.mean(neighborhood)
+                smoothed_noise[i, j] = (
+                    smooth_weight * current + (1 - smooth_weight) * smoothed
+                )
+
+        # 5. Ensure explicit amplitude matching at boundary
+        transition_width = min(3, shift_amount)
+        for i in range(transition_width):
+            # Use boundary amplitudes directly for top rows
+            amplitude_factor = np.minimum(
+                1.0,
+                np.abs(smoothed_noise[:, i])
+                / (np.abs(boundary_content) + 1e-8),
+            )
+            smoothed_noise[:, i] = np.minimum(
+                smoothed_noise[:, i], boundary_content * amplitude_factor
+            )
+
+        # 6. Scale and apply the processed noise
+        feat[:, :shift_amount] = smoothed_noise * noise_scale
+
+        # Debugging: Print statistics after shift
+        #            print(f"After shift - Min: {np.min(feat)}, Max: {np.max(feat)}, Mean: {np.mean(feat)}")
+
+        # Uncomment these lines if you want to generate visualizations
+        # CAUTION: If you are using an MPS device, you must also temporarily
+        # disable the line "mp.set_start_method("fork")" in whichever
+        # tools.train_... script you are using. Otherwise matplotlib will
+        # cause a crash.
+        # if not np.array_equal(original_feat, feat):
+        #     print(f"augmented {self.current_perf} by {shift_amount}")
+        #     if self.device == "mps":
+        #         self._save_spectrograms(
+        #             original_feat, feat, "shift_melody_low"
+        #         )
+        #     else:
+        #         self._save_spectrograms(
+        #             original_feat, feat, "shift_melody_low"
+        #         )
+
+        return feat
+
     
+    import numpy as np
+
+    def _gaussian_noise(self, cqt):
+        """
+        Добавляет гауссовский шум ко всей CQT-спектрограмме.
+        
+        Параметры:
+        - cqt: np.array, входная CQT-спектрограмма.
+        - noise_level: float, уровень шума (среднеквадратическое отклонение).
+        
+        Возвращает:
+        - noisy_cqt: np.array, спектрограмма с добавленным гауссовским шумом.
+        """
+        min_noise_level, max_noise_level = self.config["aug_params"]["noise_levels"]
+        noise_level = random.uniform(min_noise_level, max_noise_level)
+        gaussian_noise = np.random.normal(0, noise_level, cqt.shape)
+        
+        noisy_cqt = cqt + gaussian_noise
+        
+        return noisy_cqt
+    
+    def _duplicate(self, cqt_spec):
+        w, h = np.shape(cqt_spec)
+        feat_aug = cqt_spec
+        for i in range(1, w):
+            if random.random() < 0.06:
+                feat_aug[i, :] = feat_aug[i - 1, :]
+        for i in range(1, h):
+            if random.random() < 0.06:
+                feat_aug[:, i] = feat_aug[:, i - 1]
+        return feat_aug
+
     def _apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
         """
         Args:
@@ -265,32 +497,24 @@ class CoverDataset(Dataset):
             cqt_spectrogram_augmented: np.ndarray
 
         """
-        # add frequency masking?
-        if "mask_silence" in self.config["aug_params"] and self.config["aug_params"]["mask_silence"]:
-            p = random.random()
-            if p <= self.config["aug_params"]["mask_silence_prob"]:
-                # print("mask_silence")
-                cqt_spec = self._mask_silence(cqt_spec)
 
-        if "time_stretching" in self.config["aug_params"] and self.config["aug_params"]["time_stretching"]:
-            p = random.random()
-            if p <= self.config["aug_params"]["time_stretching_prob"]:
-                # print("time_stretching")
-                cqt_spec = self._time_stretching(cqt_spec)
+        # # seems like works bad ... ?
+        # if "roll_pitch" in self.config["aug_params"] and self.config["aug_params"]["roll_pitch"]:
+        #     p = random.random()
+        #     if p <= self.config["aug_params"]["roll_pitch_prob"]:
+        #         # print("roll")
 
-
-        # seems like works bad ... ?
-        if "roll_pitch" in self.config["aug_params"] and self.config["aug_params"]["roll_pitch"]:
+        if "duplicate" in self.config["aug_params"] and self.config["aug_params"]["duplicate"]:
             p = random.random()
-            if p <= self.config["aug_params"]["roll_pitch_prob"]:
-                # print("roll")
-                cqt_spec = self._roll(cqt_spec)
+            if p <= self.config["aug_params"]["duplicate_prob"]:
+                print("duplicate")
+                cqt_spec = self._duplicate(cqt_spec)
 
         # works good
         if "time_roll" in self.config["aug_params"] and self.config["aug_params"]["time_roll"]:
             p = random.random()
             if p <= self.config["aug_params"]["time_roll_prob"]:
-                # print("timeroll")
+                print("timeroll")
                 cqt_spec = self._time_roll(cqt_spec)
 
         # works good 
@@ -300,7 +524,7 @@ class CoverDataset(Dataset):
             # print("volume")
             p = random.random()
             if p <= self.config["aug_params"]["volume_prob"]:
-                # print("roll")
+                print("volume")
                 cqt_spec = self._change_volume(cqt_spec)
 
         # works good 
@@ -310,33 +534,59 @@ class CoverDataset(Dataset):
             # print("equalize")
             p = random.random()
             if p <= self.config["aug_params"]["equalize_prob"]:
+                print("equalize")
                 cqt_spec = self._apply_equalize(cqt_spec)
 
-
-        # if "add_noise" in self.config['aug_params'].keys():
-        #     None
-
-        if "time_masking" in self.config["aug_params"] and self.config["aug_params"]["time_masking"]:
+        if "gaussian_noise" in self.config["aug_params"] and self.config["aug_params"]["gaussian_noise"]:
             p = random.random()
-            if p <= self.config["aug_params"]["time_mask_prob"]:
-                # print("time_masking")
-                cqt_spec = self._time_mask(cqt_spec)
+            if p <= self.config["aug_params"]["gaussian_noise_prob"]:
+                print("gaussian_noise")
+                cqt_spec = self._gaussian_noise(cqt_spec)
 
-        if "random_time_crop" in self.config["aug_params"] and self.config["aug_params"]["random_time_crop"]:
+        # works slow and seems like bad
+        # if "low_shift" in self.config["aug_params"] and self.config["aug_params"]["low_shift"]:
+        #     p = random.random()
+        #     if p <= self.config["aug_params"]["low_shift_prob"]:
+        #         # print("low_shift")
+        #         cqt_spec = self._low_shift(cqt_spec)
+
+        # works good
+        if "mask_silence" in self.config["aug_params"] and self.config["aug_params"]["mask_silence"]:
             p = random.random()
-            if p <= self.config["aug_params"]["random_timecrop_prob"]:
-                # print("random_time_crop")
-                cqt_spec = self._random_time_crop(cqt_spec)
+            if p <= self.config["aug_params"]["mask_silence_prob"]:
+                print("mask_silence")
+                cqt_spec = self._mask_silence(cqt_spec)
+
+        # works good
+        if "time_stretch" in self.config["aug_params"] and self.config["aug_params"]["time_stretch"]:
+            p = random.random()
+            if p <= self.config["aug_params"]["time_stretch_prob"]:
+                print("time_stretch")
+                cqt_spec = self._time_stretching(cqt_spec)
+
+        # seems like works bad
+        # if "time_mask" in self.config["aug_params"] and self.config["aug_params"]["time_mask"]:
+        #     p = random.random()
+        #     if p <= self.config["aug_params"]["time_mask_prob"]:
+        #         # print("time_mask")
+        # cqt_spec = self._time_mask(cqt_spec)
+
+        # seems like works bad
+        # # сомнительно. учился долго, сошелся к тому же, что модель без аугментаций..
+        # if "random_time_crop" in self.config["aug_params"] and self.config["aug_params"]["random_time_crop"]:
+        #     p = random.random()
+        #     if p <= self.config["aug_params"]["random_timecrop_prob"]:
+        #         # print("random_time_crop")
+        #         cqt_spec = self._random_time_crop(cqt_spec)
         
-        if "random_erase" in self.config["aug_params"] and self.config["aug_params"]["random_erase"]:
-            p = random.random()
-            if p <= self.config["aug_params"]["random_erase_prob"]:
-                # print("random_erase")
-                cqt_spec = self._random_erase(cqt_spec)
+        # # работает плохо!
+        # if "random_erase" in self.config["aug_params"] and self.config["aug_params"]["random_erase"]:
+        #     p = random.random()
+        #     if p <= self.config["aug_params"]["random_erase_prob"]:
+        #         # print("random_erase")
+        #         cqt_spec = self._random_erase(cqt_spec)
 
         cqt_spec = self._apply_padding(cqt_spec)
-
-        # time_stretching - легкое сужение или растяжение по временной оси
         return cqt_spec
 
     def _load_all_cqt(self):

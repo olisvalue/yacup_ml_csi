@@ -15,14 +15,20 @@ from models.data_model import Postfix
 
 import wandb
 from typing import Literal
+import torch
 
 class Zero:
     def __init__(self):
-        self.value = 0.0
+        self.value = torch.tensor(0.0)  
+
     def __float__(self):
-        return self.value
+        return self.value.item() 
+
     def item(self):
-        return self.value
+        return self.value.item()
+
+    def __add__(self, other):
+        return other + self.value
 
 def reduce_func(D_chunk, start):
     top_size = 100
