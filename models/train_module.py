@@ -13,10 +13,10 @@ import torch.nn.functional as F
 from tqdm import tqdm, trange
 
 from models.data_model import BatchDict, Postfix, TestResults, ValDict
-from models.early_stopper import EarlyStopper
+from models.utils.early_stopper import EarlyStopper
 from models.modules import Bottleneck, Resnet50, TransformerEncoderModel
 from models.new_modules import Model
-from models.utils import (
+from models.utils.utils import (
     calculate_ranking_metrics,
     calculate_ranking_metrics_batched,
     dataloader_factory,
@@ -25,36 +25,15 @@ from models.utils import (
     save_best_log,
     save_logs,
     save_predictions,
-    save_test_predictions,
-    Zero
+    save_test_predictions
 )
 
 from models.loss import CenterLoss, FocalLoss, HardTripletLoss
-from models.scheduler import UserDefineExponentialLR
+from models.basic_modules.scheduler import UserDefineExponentialLR
 
-# current_dir = os.getcwd()
-# os.chdir('/home/olisvalue/contests/baseline/EfficientAT')
-# sys.path.insert(0, os.getcwd())
-# # from models.dymn.model import get_model as get_dymn
-# os.chdir(current_dir)
-# sys.path.pop(0)
-
-# class WandbHandler(logging.Handler):
-#     def emit(self, record):
-#         log_message = self.format(record)
-#         wandb.log({"log_message": log_message})  # Измените "log" на "log_message"
-
-# Настройка логгера
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-# wandb_handler = WandbHandler()
-# wandb_handler.setLevel(logging.INFO)
-# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-# wandb_handler.setFormatter(formatter)
-# logger.addHandler(wandb_handler)
 
-# Пример использования
-logger.info("This log message will be sent to wandb!")
 
 
 class TrainModule:
@@ -65,30 +44,13 @@ class TrainModule:
         self.num_classes = self.config["train"]["num_classes"]
         self.max_len = 50
 
-        # self.model = get_dymn(pretrained_name="dymn10_as", num_classes=self.num_classes)
-        # self.model = Resnet50(
-        #     Bottleneck,
-        #     num_channels=self.config["num_channels"],
-        #     num_classes=self.num_classes,
-        #     dropout=self.config["train"]["dropout"]
-        # )
-
         self.model = Model(config)
         self.model.to(self.config["device"])
 
-        # for name, param in self.model.named_parameters():
-        #     if not name.startswith("fc"):
-        #         param.requires_grad = False
-
         self.postfix: Postfix = {}
 
-        #self.triplet_loss = nn.TripletMarginLoss(margin=config["train"]["triplet_margin"])
-        # self.triplet_loss = nn.TripletMarginWithDistanceLoss(distance_function=lambda x, y: 1.0 - F.cosine_similarity(x, y), margin=config["train"]["triplet_margin"])
-        # self.cls_loss = nn.CrossEntropyLoss(label_smoothing=config["train"]["smooth_factor"])
-
-        # Loss
         if "alpha" in config["train"].keys():
-            alpha = np.load(hp["ce"]["alpha"])
+            alpha = np.load(self.config["ce"]["alpha"])
             alpha = 1.0 / (alpha + 1)
             alpha = alpha / np.sum(alpha)
             logger.info("use alpha with {}".format(len(alpha)))
@@ -119,24 +81,7 @@ class TrainModule:
         self.config["val"]["output_dir"] = dir_checker(self.config["val"]["output_dir"])
 
         if self.config["train"]["model_ckpt"] is not None:
-            # checkpoint = torch.load(self.config["train"]["model_ckpt"])
-            # self.model.load_state_dict(checkpoint, strict=False)
-            # logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
             checkpoint = torch.load(self.config["train"]["model_ckpt"])
-            # ignore_list = ["_global_cmvn.weight", "_global_cmvn.bias", "_global_cmvn.running_mean",
-            #             "_global_cmvn.running_var", "_encoder.embed.out.0.weight", "_bottleneck.weight",
-            #             "_bottleneck.bias", "_bottleneck.running_mean", "_bottleneck.running_var",
-            #             "_pool_layer._final_layer.weight", "_ce_layer.weight"]
-            # for name in tuple(checkpoint.keys()):
-            #     if name in ignore_list:
-            #         print(f"{name} was deleted")
-            #         checkpoint.pop(name, None)
-            # for name, param in self.model.named_parameters():
-            #     if name not in ignore_list:
-            #         param.requires_grad = False
-            #     else:
-            #         print(f"not freeze {name}")
-            
             self.model.load_state_dict(checkpoint, strict=True)
             logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
 
@@ -177,8 +122,6 @@ class TrainModule:
         self.state = "finished"
 
     def validate(self) -> None:
-        # if self.config["augmentations"] == True:
-        #     logger.info("!!!!!!!!!!!!! USING AUGMENTATIONS ON VALIDATION SET !!!!!!!!!!!!")
         self.v_loader = dataloader_factory(config=self.config, data_split="val")
         self.state = "running"
         self.validation_procedure()
@@ -188,7 +131,7 @@ class TrainModule:
         self.test_loader = dataloader_factory(config=self.config, data_split="test")
         self.test_results: TestResults = {}
         if self.best_model_path is not None:
-            self.model.load_state_dict(torch.load(self.best_model_path), strict=False)
+            self.model.load_state_dict(torch.load(self.best_model_path), strict=True)
             logger.info(f"Best model loaded from checkpoint: {self.best_model_path}")
         elif self.config["test"]["model_ckpt"] is not None:
             self.model.load_state_dict(torch.load(self.config["test"]["model_ckpt"]), strict=True)
@@ -289,11 +232,26 @@ class TrainModule:
                 labels_neg
             ]).to(self.config["device"]).long()
 
-            tri_loss = self.triplet_loss(embeddings, labels.to(self.config["device"]))*self.config["ce"]["weight"]
-            ce_loss = self.cls_loss(anchor["cls"], labels_anchor.float().to(self.config["device"]))*self.config["triplet"]["weight"]
+            def verify_labels_in_range(labels, num_classes):
+                """Checks that all labels are within the expected range."""
+                if torch.any(labels >= num_classes) or torch.any(labels < 0):
+                    print(labels, num_classes)
+                    raise ValueError("One or more labels are out of bounds.")
+                
+            verify_labels_in_range(labels_anchor, self.config["ce"]["output_dims"])
+
+            if self.config["triplet"]["weight"] < 0.001:
+                ce_loss = torch.tensor(0.0)
+            else:
+                tri_loss = self.triplet_loss(embeddings, labels.to(self.config["device"]))*self.config["ce"]["weight"]
+
+            if self.config["ce"]["weight"] < 0.001:
+                ce_loss = torch.tensor(0.0)
+            else:
+                ce_loss = self.cls_loss(anchor["cls"], labels_anchor.float().to(self.config["device"]))*self.config["triplet"]["weight"]
 
             if self.config["center"]["weight"] < 0.001:
-                center_loss = Zero()
+                center_loss = torch.tensor(0.0)
             else:
                 center_loss = self.center_loss(anchor["f_c"], labels_anchor.to(self.config["device"]))*self.config["center"]["weight"]
 
@@ -304,7 +262,7 @@ class TrainModule:
         if self.config["device"] != "cpu":
             self.scaler.scale(loss).backward()
             
-            self.scaler.unscale_(self.optimizer)  # Размасштабирование градиентов перед отсечением
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
             self.scaler.step(self.optimizer)
@@ -398,44 +356,6 @@ class TrainModule:
             for query_indx, query_nearest_items in chunk_result:
                 predictions.append((trackids[query_indx], [trackids[nn_indx] for nn_indx in query_nearest_items]))
         save_test_predictions(predictions, output_dir=self.config["test"]["output_dir"])
-    # def validation_step(self, batch: BatchDict):
-    #     anchor_id = batch["anchor_id"]
-    #     features = batch["anchor"].to(self.config["device"])
-
-    #     # print('*'*50)
-    #     # print(features.shape)
-    #     # print(features)
-    #     # print('*'*50)
-
-    #     # Averaging embeddings along the second dimension (axis 1)
-    #     avg_features_f_c = features.mean(dim=2)
-
-    #     # print(avg_features_f_c.shape)
-    #     # print(avg_features_f_c)
-        
-    #     # exit()
-
-    #     return {
-    #         "anchor_id": anchor_id.numpy(),
-    #         "f_c": avg_features_f_c.squeeze(0).detach().cpu(),
-    #     }
-
-    # def test_procedure(self) -> None:
-    #     # self.model.eval()
-    #     trackids: List[int] = []
-    #     embeddings: List[np.array] = []
-    #     for batch in tqdm(self.test_loader, disable=(not self.config["progress_bar"])):
-    #         test_dict = self.validation_step(batch)
-    #         if test_dict["f_c"].ndim == 1:
-    #             test_dict["f_c"] = test_dict["f_c"].unsqueeze(0)
-    #         for anchor_id, embedding in zip(test_dict["anchor_id"], test_dict["f_c"]):
-    #             trackids.append(anchor_id)
-    #             embeddings.append(embedding.numpy())
-    #     predictions = []
-    #     for chunk_result in pairwise_distances_chunked(embeddings, metric='cosine', reduce_func=reduce_func, working_memory=100):
-    #         for query_indx, query_nearest_items in chunk_result:
-    #             predictions.append((trackids[query_indx], [trackids[nn_indx] for nn_indx in query_nearest_items]))
-    #     save_test_predictions(predictions, output_dir=self.config["test"]["output_dir"])
 
     def overfit_check(self) -> None:
         if self.early_stop(self.postfix["mAP"]):

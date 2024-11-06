@@ -31,6 +31,7 @@ class CoverDataset(Dataset):
         super().__init__()
         self.config = config
         self.augmentations = config["augmentations"]
+        self.use_val_for_train = config["use_val_for_train"]
 
         self.data_path = data_path
         self.file_ext = file_ext
@@ -39,6 +40,8 @@ class CoverDataset(Dataset):
         self.debug = debug
         self.max_len = max_len
         self._load_data()
+        # if self.use_val_for_train and self.data_split == 'train':
+        #     self._load_add_data()
 
         self.ram_storage = config.get("store_data_in_ram", False)
         if self.ram_storage:
@@ -104,7 +107,12 @@ class CoverDataset(Dataset):
 
     def _load_data(self) -> None:
         if self.data_split in ['train', 'val']:
-            cliques_subset = np.load(os.path.join(self.data_path, "splits", "{}_cliques.npy".format(self.data_split)))
+            if self.use_val_for_train and self.data_split == 'train':
+                train_cliques = np.load(os.path.join(self.data_path, "splits", "train_cliques.npy"))
+                val_cliques = np.load(os.path.join(self.data_path, "splits", "val_cliques.npy"))
+                cliques_subset = np.concatenate((train_cliques, val_cliques))
+            else:
+                cliques_subset = np.load(os.path.join(self.data_path, "splits", "{}_cliques.npy".format(self.data_split)))
             self.versions = pd.read_csv(
                 os.path.join(self.data_path, "cliques2versions.tsv"), sep='\t', converters={"versions": eval}
             )
@@ -120,6 +128,7 @@ class CoverDataset(Dataset):
             self.track_ids = self.version2clique.index.to_list()
         else:
             self.track_ids = np.load(os.path.join(self.data_path, "splits", "{}_ids.npy".format(self.data_split)))
+
 
     def _roll(self, cqt_spec):
         shift_num = self.config["aug_params"]["roll_shift_num"]
@@ -485,7 +494,7 @@ class CoverDataset(Dataset):
                 feat_aug[:, i] = feat_aug[:, i - 1]
         return feat_aug
 
-    def _apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
+    def apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
         """
         Args:
             cqt_spectrogram: np.ndarray
@@ -507,14 +516,14 @@ class CoverDataset(Dataset):
         if "duplicate" in self.config["aug_params"] and self.config["aug_params"]["duplicate"]:
             p = random.random()
             if p <= self.config["aug_params"]["duplicate_prob"]:
-                print("duplicate")
+                # print("duplicate")
                 cqt_spec = self._duplicate(cqt_spec)
 
         # works good
         if "time_roll" in self.config["aug_params"] and self.config["aug_params"]["time_roll"]:
             p = random.random()
             if p <= self.config["aug_params"]["time_roll_prob"]:
-                print("timeroll")
+                # print("timeroll")
                 cqt_spec = self._time_roll(cqt_spec)
 
         # works good 
@@ -524,7 +533,7 @@ class CoverDataset(Dataset):
             # print("volume")
             p = random.random()
             if p <= self.config["aug_params"]["volume_prob"]:
-                print("volume")
+                # print("volume")
                 cqt_spec = self._change_volume(cqt_spec)
 
         # works good 
@@ -534,58 +543,28 @@ class CoverDataset(Dataset):
             # print("equalize")
             p = random.random()
             if p <= self.config["aug_params"]["equalize_prob"]:
-                print("equalize")
+                # print("equalize")
                 cqt_spec = self._apply_equalize(cqt_spec)
 
         if "gaussian_noise" in self.config["aug_params"] and self.config["aug_params"]["gaussian_noise"]:
             p = random.random()
             if p <= self.config["aug_params"]["gaussian_noise_prob"]:
-                print("gaussian_noise")
+                # print("gaussian_noise")
                 cqt_spec = self._gaussian_noise(cqt_spec)
-
-        # works slow and seems like bad
-        # if "low_shift" in self.config["aug_params"] and self.config["aug_params"]["low_shift"]:
-        #     p = random.random()
-        #     if p <= self.config["aug_params"]["low_shift_prob"]:
-        #         # print("low_shift")
-        #         cqt_spec = self._low_shift(cqt_spec)
 
         # works good
         if "mask_silence" in self.config["aug_params"] and self.config["aug_params"]["mask_silence"]:
             p = random.random()
             if p <= self.config["aug_params"]["mask_silence_prob"]:
-                print("mask_silence")
+                # print("mask_silence")
                 cqt_spec = self._mask_silence(cqt_spec)
 
         # works good
         if "time_stretch" in self.config["aug_params"] and self.config["aug_params"]["time_stretch"]:
             p = random.random()
             if p <= self.config["aug_params"]["time_stretch_prob"]:
-                print("time_stretch")
+                # print("time_stretch")
                 cqt_spec = self._time_stretching(cqt_spec)
-
-        # seems like works bad
-        # if "time_mask" in self.config["aug_params"] and self.config["aug_params"]["time_mask"]:
-        #     p = random.random()
-        #     if p <= self.config["aug_params"]["time_mask_prob"]:
-        #         # print("time_mask")
-        # cqt_spec = self._time_mask(cqt_spec)
-
-        # seems like works bad
-        # # сомнительно. учился долго, сошелся к тому же, что модель без аугментаций..
-        # if "random_time_crop" in self.config["aug_params"] and self.config["aug_params"]["random_time_crop"]:
-        #     p = random.random()
-        #     if p <= self.config["aug_params"]["random_timecrop_prob"]:
-        #         # print("random_time_crop")
-        #         cqt_spec = self._random_time_crop(cqt_spec)
-        
-        # # работает плохо!
-        # if "random_erase" in self.config["aug_params"] and self.config["aug_params"]["random_erase"]:
-        #     p = random.random()
-        #     if p <= self.config["aug_params"]["random_erase_prob"]:
-        #         # print("random_erase")
-        #         cqt_spec = self._random_erase(cqt_spec)
-
         cqt_spec = self._apply_padding(cqt_spec)
         return cqt_spec
 
@@ -605,7 +584,7 @@ class CoverDataset(Dataset):
 
         if self.augmentations and self.data_split == "train":
             # print("!!!!!!!!!!!!!!USE AUGMENTATIONS!!!!!!!!!!!!!!")
-            cqt_spectrogram = self._apply_augmentations(cqt_spectrogram)
+            cqt_spectrogram = self.apply_augmentations(cqt_spectrogram)
 
         return torch.from_numpy(cqt_spectrogram).float()
 

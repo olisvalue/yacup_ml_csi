@@ -1,40 +1,54 @@
-data_path: "/home/olisvalue/contests/baseline/data"
+data_path: "./data"
 augmentations: True
-store_data_in_ram: False
+store_data_in_ram: True
+use_val_for_train: True
+seed: 2024
+
+ce:
+  # output_dims: 39535
+  output_dims: 41616
+  weight: 1.0
+  gamma: 2
+
+triplet:
+  margin: 0.3
+  weight: 0.1
+
+center:
+  weight: 0.01
+
 
 aug_params:
-  # notes: volume is definetely good augmentation
   volume: True
-  volume_prob: 0.7
+  volume_prob: 0.6
   low_volume_coef: 0.5
-  high_volume_coef: 1.0
+  high_volume_coef: 1.1
 
   time_roll: True
-  time_roll_prob: 0.5
-  min_timeroll_shift_num: -12
-  max_timeroll_shift_num: 12
-
+  time_roll_prob: 0.6
+  min_timeroll_shift_num: -14
+  max_timeroll_shift_num: 14
 
   time_stretch: True
-  time_stretch_prob: 0.5
+  time_stretch_prob: 0.55
   low_stretch_factor: 0.8
-  high_stretch_factor: 1.2
+  high_stretch_factor: 1.25
 
   equalize: True
-  equalize_prob: 0.7
-  equalize_low_factor: 0.70
-  equalize_high_factor: 1.15
+  equalize_prob: 0.75
+  equalize_low_factor: 0.60
+  equalize_high_factor: 1.2
 
-  mask_silence: True
+  gaussian_noise: True
+  gaussian_noise_prob: 0.55
+  noise_levels: [0.0, 4.0]
+
+  # mask_silence: True
   mask_silence_prob: 0.1
   pad_value: -80
 
-  gaussian_noise: True
-  gaussian_noise_prob: 0.5
-  noise_levels: [0.0, 3.0]
-
-  duplicate: True
-  duplicate_prob: 0.3
+  # duplicate: True
+  duplicate_prob: 0.35
 
 
   # time_mask: True
@@ -59,33 +73,16 @@ aug_params:
   # mask_region_size: [0.25, 0.1]
 
   
-
-
-seed: 2024
-
 file_extension: "npy"
 save_model_path: "models"
 debug: True
 progress_bar: True
 device: "cuda:0"
 num_channels: 1
-# embed_dim: 2048
 # embed_dim: 128
 embed_dim: 256
-# Осторожно, embed_dim = 128 для Conformer (base)!
+# embed_dim: 512
 use_wandb: True
-
-ce:
-  output_dims: 39535
-  weight: 1.0
-  gamma: 2
-
-triplet:
-  margin: 0.3
-  weight: 0.1
-
-center:
-  weight: 0.01
 
 conformer:
   input_dim: 84
@@ -94,24 +91,22 @@ conformer:
   # attention_dim: 512
   attention_dim: 256
   num_blocks: 6
-  input_layer: conv2d_nosub
-  # input_layer: conv2d_upsample4
+  # input_layer: conv2d_nosub
+  input_layer: conv2d_upsample2
 
 
 
 train:
+  num_classes: 41616
   warmup: False
   warmup_steps: 400
-  dataset_path: "/home/olisvalue/contests/baseline/data/train"
+  dataset_path: "./data/train"
   mixed_precision: True
-  num_classes: 39535
   triplet_margin: 0.3
   smooth_factor: 0.1
   dropout: 0.1
   model_ckpt:
-  # model_ckpt: "/home/olisvalue/contests/baseline/pretrained.pt"
   batch_size: 128
-  # batch_size: 150
 
   num_workers: 0
   shuffle: True
@@ -119,23 +114,18 @@ train:
   epochs: 25
 
   learning_rate: 0.001
-  # learning_rate: 0.0009
   adam_b1: 0.8
   adam_b2: 0.99
   lr_decay: 0.99
-  # lr_decay: 0.98
-  # lr_decay: 0.9975
   min_lr: 0.0001
-  # lr_update_steps: 550
   lr_update_steps: 1000
-  # надо бы 1000 для conformer
 
-  patience: 4
+  patience: 8
   log_steps: 10
   gamma: 2
 
 val:
-  dataset_path: "/home/olisvalue/contests/baseline/data/train"
+  dataset_path: "./data/train"
   save_val_outputs: True
   max_seq_len: -1
   batch_size: 100
@@ -143,14 +133,13 @@ val:
   shuffle: False
   drop_last: False
   output_dir: "outputs_val"
-  # val_period: 470
   val_period: 800
 
 test:
-  dataset_path: "/home/olisvalue/contests/baseline/data/test"
+  dataset_path: "./data/test"
   save_test_outputs: True
-  model_ckpt: 
-  # model_ckpt: "/home/olisvalue/contests/baseline/best-model-epoch=11-max_secs=50.pt"
+  # model_ckpt: 
+  model_ckpt: "./outputs_val/run-25/model/best-model-epoch=19-max_secs=50.pt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0

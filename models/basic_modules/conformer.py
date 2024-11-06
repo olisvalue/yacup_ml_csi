@@ -1222,6 +1222,89 @@ class ConformerEncoderLayer(torch.nn.Module):
     return x, mask, new_att_cache, new_cnn_cache
 
 
+
+from models.data_loader import *
+from utils import load_config
+class Conv2dTemporalExpansion2_augmented(BaseSubsampling):
+    def __init__(self, idim: int, odim: int, dropout_rate: float, pos_enc_class: torch.nn.Module, aug_config: dict):
+        super().__init__()
+        config = load_config(config_path="./config/config.yaml")
+
+        self.dataset = CoverDataset(
+            data_path=config["data_path"],
+            file_ext=config["file_extension"],
+            data_split='train',
+            debug=config["debug"],
+            max_len=50,
+            dataset_path="/home/olisvalue/contests/baseline/data/train",
+            config=config)
+
+        self.expansion_factor = 2
+        self.aug_config = aug_config
+        self.conv_initial = torch.nn.ConvTranspose2d(1, 1, kernel_size=(self.expansion_factor, 1),
+                                                     stride=(self.expansion_factor, 1), padding=(0, 0))
+        self.conv_layers = torch.nn.Sequential(
+            torch.nn.Conv2d(1, odim, 3, stride=1, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(odim, odim, 3, stride=1, padding=1),
+            torch.nn.ReLU()
+        )
+        self.out = torch.nn.Sequential(
+            torch.nn.Linear(odim * idim, odim),
+            torch.nn.Dropout(dropout_rate)
+        )
+        self.pos_enc = pos_enc_class
+        self.subsampling_rate = 1
+        self.right_context = 0  
+
+    def _apply_augmentations(self, cqt_spec: np.ndarray) -> np.ndarray:
+        # Применяем аугментации к одному каналу спектрограммы
+        return self._apply_channel_augmentations(cqt_spec[0])  # Применим к первому каналу
+
+    def _apply_channel_augmentations(self, channel_spec: np.ndarray) -> np.ndarray:
+        # Здесь можно добавить код для применения аугментаций к одному каналу
+        # Например: return your_augmentation_function(channel_spec, self.aug_config)
+        return channel_spec  # для примера возвращаем спектрограмму без изменений
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        offset: Union[int, torch.Tensor] = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x = x.unsqueeze(1)  # (batch, channel=1, time, idim)
+
+        # Шаг 1: Применение ConvTranspose2d для временного расширения
+        x = self.conv_initial(x)  # (batch, odim, expanded_time, idim)
+        
+        # Шаг 2: Извлечение одного канала для аугментаций
+        x_single_channel = x[:, :1, :, :].detach().cpu().numpy()  # Взять первый канал и перевести в numpy
+        
+        # Шаг 3: Применение аугментаций к извлеченному каналу
+        x_augmented = np.array([self._apply_augmentations(sample) for sample in x_single_channel])
+        
+        # Преобразование обратно в тензор
+        x_augmented = torch.tensor(x_augmented, dtype=x.dtype, device=x.device)
+        
+        # Замена одного канала обратно в многоканальный тензор
+        x[:, :1, :, :] = x_augmented
+        
+        # Шаг 4: Применение оставшихся сверточных слоев
+        x = self.conv_layers(x)
+        
+        # Реформатирование для линейного слоя
+        b, c, t, f = x.size()
+        x = self.out(x.transpose(1, 2).contiguous().view(b, t, c * f))
+        
+        # Обновляем positional encoding
+        x, pos_emb = self.pos_enc(x, offset)
+        
+        # Обновляем маску для расширенной временной длины
+        x_mask = x_mask.repeat_interleave(self.expansion_factor, dim=2)
+        
+        return x, pos_emb, x_mask
+
+
 class ConformerEncoder(torch.nn.Module):
   def __init__(
       self,
