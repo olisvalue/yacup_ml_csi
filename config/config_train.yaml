@@ -1,12 +1,11 @@
 data_path: "./data"
 augmentations: True
-store_data_in_ram: True
+# store_data_in_ram: True
+store_data_in_ram: False
 use_val_for_train: True
 seed: 2024
 
 ce:
-  # output_dims: 39535
-  output_dims: 41616
   weight: 1.0
   gamma: 2
 
@@ -98,12 +97,11 @@ conformer:
 
 train:
   num_classes: 41616
+  # num_classes: 39535
   warmup: False
   warmup_steps: 400
   dataset_path: "./data/train"
   mixed_precision: True
-  triplet_margin: 0.3
-  smooth_factor: 0.1
   dropout: 0.1
   model_ckpt:
   batch_size: 128
@@ -122,7 +120,6 @@ train:
 
   patience: 8
   log_steps: 10
-  gamma: 2
 
 val:
   dataset_path: "./data/train"
@@ -138,8 +135,8 @@ val:
 test:
   dataset_path: "./data/test"
   save_test_outputs: True
-  # model_ckpt: 
-  model_ckpt: "./outputs_val/run-25/model/best-model-epoch=19-max_secs=50.pt"
+  model_ckpt: 
+  # model_ckpt: "./path/to/ckpt"
   max_seq_len: -1
   batch_size: 1
   num_workers: 0

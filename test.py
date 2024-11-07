@@ -5,7 +5,7 @@ import numpy as np
 
 from models.train_module import TrainModule
 from utils import initialize_logging, load_config
-config = load_config(config_path="./config/config.yaml")
+config = load_config(config_path="./config/config_test.yaml")
 
 def set_seed(seed):
     random.seed(seed)

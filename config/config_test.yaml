@@ -1,0 +1,72 @@
+data_path: "./data"
+augmentations: True
+store_data_in_ram: False
+use_val_for_train: True
+seed: 2024
+
+train:
+  num_classes: 41616
+  # num_classes: 39535
+  warmup: False
+  warmup_steps: 400
+  dataset_path: "./data/train"
+  mixed_precision: True
+  dropout: 0.1
+  model_ckpt:
+  batch_size: 128
+
+  num_workers: 0
+  shuffle: True
+  drop_last: True
+  epochs: 25
+
+  learning_rate: 0.001
+  adam_b1: 0.8
+  adam_b2: 0.99
+  lr_decay: 0.99
+  min_lr: 0.0001
+  lr_update_steps: 1000
+
+  patience: 8
+  log_steps: 10
+
+test:
+  dataset_path: "./data/test"
+  save_test_outputs: True
+  # model_ckpt: 
+  model_ckpt: "./conformer_upsample2.pt"
+  max_seq_len: -1
+  batch_size: 1
+  num_workers: 0
+  shuffle: False
+  drop_last: False
+  output_dir: "outputs_test"
+
+
+file_extension: "npy"
+save_model_path: "models"
+debug: True
+progress_bar: True
+device: "cuda:0"
+num_channels: 1
+embed_dim: 256
+use_wandb: True
+
+conformer:
+  input_dim: 84
+  output_dims: 128
+  attention_dim: 256
+  num_blocks: 6
+  # input_layer: conv2d_nosub
+  input_layer: conv2d_upsample2
+
+ce:
+  weight: 1.0
+  gamma: 2
+
+triplet:
+  margin: 0.3
+  weight: 0.1
+
+center:
+  weight: 0.01

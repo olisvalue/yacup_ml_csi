@@ -1,5 +1,5 @@
 import logging
-from typing import Tuple, Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -28,18 +28,14 @@ class AttentiveStatisticsPooling(torch.nn.Module):
         self._eps = 1e-12
         self._linear = Linear(channels * 3, channels)
         self._tanh = torch.nn.Tanh()
-        self._conv = Conv1d(
-          in_channels=channels, out_channels=channels, kernel_size=1
+        self._conv = Conv1d(in_channels=channels, out_channels=channels, kernel_size=1)
+        self._final_layer = torch.nn.Linear(channels * 2, output_channels, bias=False)
+        logging.info(
+            f"Init AttentiveStatisticsPooling with {channels}->{output_channels}"
         )
-        self._final_layer = torch.nn.Linear(channels * 2, output_channels,
-                                            bias=False)
-        logging.info(f"Init AttentiveStatisticsPooling with {channels}->{output_channels}")
 
     @staticmethod
-    def _compute_statistics(x: torch.Tensor,
-                            m: torch.Tensor,
-                            eps: float,
-                            dim: int = 2):
+    def _compute_statistics(x: torch.Tensor, m: torch.Tensor, eps: float, dim: int = 2):
         mean = (m * x).sum(dim)
         std = torch.sqrt((m * (x - mean.unsqueeze(dim)).pow(2)).sum(dim).clamp(eps))
         return mean, std
@@ -63,8 +59,9 @@ class AttentiveStatisticsPooling(torch.nn.Module):
         mean = mean.unsqueeze(2).repeat(1, 1, L)
         std = std.unsqueeze(2).repeat(1, 1, L)
         attn = torch.cat([x, mean, std], dim=1)
-        attn = self._conv(self._tanh(self._linear(
-          attn.transpose(1, 2)).transpose(1, 2)))
+        attn = self._conv(
+            self._tanh(self._linear(attn.transpose(1, 2)).transpose(1, 2))
+        )
 
         attn = attn.masked_fill(mask == 0, float("-inf"))  # Filter out zero-padding
         attn = F.softmax(attn, dim=2)
@@ -72,8 +69,9 @@ class AttentiveStatisticsPooling(torch.nn.Module):
         pooled_stats = self._final_layer(torch.cat((mean, std), dim=1))
         return pooled_stats
 
-    def forward_with_mask(self, x: torch.Tensor,
-                          lengths: Optional[torch.Tensor] = None):
+    def forward_with_mask(
+        self, x: torch.Tensor, lengths: Optional[torch.Tensor] = None
+    ):
         """Calculates mean and std for a batch (input tensor).
 
         Args:
@@ -116,10 +114,12 @@ class AttentiveStatisticsPooling(torch.nn.Module):
         return pooled_stats
 
     @staticmethod
-    def length_to_mask(length: torch.Tensor,
-                      max_len: Optional[int] = None,
-                      dtype: Optional[torch.dtype] = None,
-                      device: Optional[torch.device] = None):
+    def length_to_mask(
+        length: torch.Tensor,
+        max_len: Optional[int] = None,
+        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = None,
+    ):
         """Creates a binary mask for each sequence.
 
         Arguments
@@ -145,9 +145,9 @@ class AttentiveStatisticsPooling(torch.nn.Module):
 
         if max_len is None:
             max_len = length.max().long().item()  # using arange to generate mask
-        mask = torch.arange(
-          max_len, device=length.device, dtype=length.dtype
-        ).expand(len(length), max_len) < length.unsqueeze(1)
+        mask = torch.arange(max_len, device=length.device, dtype=length.dtype).expand(
+            len(length), max_len
+        ) < length.unsqueeze(1)
 
         if dtype is None:
             dtype = length.dtype
@@ -160,7 +160,7 @@ class AttentiveStatisticsPooling(torch.nn.Module):
 
 
 class Model(BasicModel):
-    """ Csi Backbone Model:
+    """Csi Backbone Model:
         Batch-norm
         Conformer-Encoder(x6 or x4)
         Global-Avg-Pool
@@ -182,15 +182,17 @@ class Model(BasicModel):
         self._global_cmvn = torch.nn.BatchNorm1d(config["conformer"]["input_dim"])
 
         self._encoder = ConformerEncoder(
-          input_size=config["conformer"]["input_dim"],
-          output_size=config["conformer"]["output_dims"],
-          linear_units=config["conformer"]["attention_dim"],
-          num_blocks=config["conformer"]["num_blocks"],
-          input_layer=config["conformer"]["input_layer"])
+            input_size=config["conformer"]["input_dim"],
+            output_size=config["conformer"]["output_dims"],
+            linear_units=config["conformer"]["attention_dim"],
+            num_blocks=config["conformer"]["num_blocks"],
+            input_layer=config["conformer"]["input_layer"],
+        )
 
         if config["conformer"]["output_dims"] != config["embed_dim"]:
-            self._embed_lo = torch.nn.Linear(config["conformer"]["output_dims"],
-                                          config["embed_dim"])
+            self._embed_lo = torch.nn.Linear(
+                config["conformer"]["output_dims"], config["embed_dim"]
+            )
         else:
             self._embed_lo = None
 
@@ -199,9 +201,11 @@ class Model(BasicModel):
         self._bottleneck.bias.requires_grad_(False)  # no shift
 
         self._pool_layer = AttentiveStatisticsPooling(
-          config["conformer"]["output_dims"], output_channels=config["embed_dim"])
+            config["conformer"]["output_dims"], output_channels=config["embed_dim"]
+        )
         self._ce_layer = torch.nn.Linear(
-          config["embed_dim"], config["ce"]["output_dims"], bias=False)
+            config["embed_dim"], config["train"]["num_classes"], bias=False
+        )
 
         # Loss
         if "alpha" in config["ce"].keys():
@@ -231,8 +235,11 @@ class Model(BasicModel):
 
         # print(f"input shape after global cmvn: {x.shape}")
 
-        xs_lens = torch.full(
-          [x.size(0)], fill_value=x.size(1), dtype=torch.long).to(x.device).long()
+        xs_lens = (
+            torch.full([x.size(0)], fill_value=x.size(1), dtype=torch.long)
+            .to(x.device)
+            .long()
+        )
         # print(f"xs lens is: {xs_lens}")
         x, _ = self._encoder(x, xs_lens=xs_lens, decoding_chunk_size=-1)
         # print(f"in Model: input shape after Conformer encoder: {x.shape}")
@@ -241,7 +248,7 @@ class Model(BasicModel):
         f_c = self._bottleneck(f_t)
         cls = self._ce_layer(f_c)
         return dict(f_t=f_t, f_c=f_c, cls=cls)
-        
+
     @torch.jit.ignore
     def inference(self, feat: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         with torch.no_grad():
@@ -256,8 +263,9 @@ class Model(BasicModel):
         return embed
 
     @torch.jit.ignore
-    def compute_loss(self, anchor: torch.Tensor, label: torch.Tensor) -> Tuple[
-        torch.Tensor, Dict]:
+    def compute_loss(
+        self, anchor: torch.Tensor, label: torch.Tensor
+    ) -> Tuple[torch.Tensor, Dict]:
         """compute ce and triplet loss"""
         f_t = self.forward(anchor)
         # print("f_t", f_t)
@@ -281,4 +289,3 @@ class Model(BasicModel):
             loss = loss + cen_loss * cen_weight
             loss_dict.update({"cen_loss": cen_loss})
         return loss, loss_dict
-    

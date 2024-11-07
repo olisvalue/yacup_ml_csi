@@ -1,21 +1,20 @@
 import logging
-import wandb
-
 import os
 from copy import deepcopy
 from typing import Dict, List
 
 import numpy as np
-from sklearn.metrics import pairwise_distances_chunked
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from sklearn.metrics import pairwise_distances_chunked
 from tqdm import tqdm, trange
 
+from models.basic_modules.scheduler import UserDefineExponentialLR
 from models.data_model import BatchDict, Postfix, TestResults, ValDict
-from models.utils.early_stopper import EarlyStopper
-from models.modules import Bottleneck, Resnet50, TransformerEncoderModel
+from models.loss import CenterLoss, FocalLoss, HardTripletLoss
+
+# from models.modules import Bottleneck, Resnet50, TransformerEncoderModel
 from models.new_modules import Model
+from models.utils.early_stopper import EarlyStopper
 from models.utils.utils import (
     calculate_ranking_metrics,
     calculate_ranking_metrics_batched,
@@ -25,15 +24,11 @@ from models.utils.utils import (
     save_best_log,
     save_logs,
     save_predictions,
-    save_test_predictions
+    save_test_predictions,
 )
-
-from models.loss import CenterLoss, FocalLoss, HardTripletLoss
-from models.basic_modules.scheduler import UserDefineExponentialLR
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
 
 
 class TrainModule:
@@ -58,24 +53,36 @@ class TrainModule:
             alpha = None
             logger.info("Not use alpha")
 
-        self.triplet_loss = HardTripletLoss(margin=config["train"]["triplet_margin"])
-        
-        self.cls_loss = FocalLoss(alpha=alpha, gamma=config["train"]["gamma"],
-                              num_cls=config["train"]["num_classes"])
-        
-        self.center_loss = CenterLoss(num_classes=config["train"]["num_classes"],
-                                    feat_dim=config["embed_dim"], use_gpu=True)
+        self.triplet_loss = HardTripletLoss(margin=config["triplet"]["margin"])
+
+        self.cls_loss = FocalLoss(
+            alpha=alpha,
+            gamma=config["ce"]["gamma"],
+            num_cls=config["train"]["num_classes"],
+        )
+
+        self.center_loss = CenterLoss(
+            num_classes=config["train"]["num_classes"],
+            feat_dim=config["embed_dim"],
+            use_gpu=True,
+        )
 
         self.early_stop = EarlyStopper(patience=self.config["train"]["patience"])
         self.optimizer = self.configure_optimizers()
         self.scheduler = UserDefineExponentialLR(
-                optimizer=self.optimizer, gamma=config["train"]["lr_decay"],
-                min_lr=config["train"]["min_lr"], last_epoch=-1,
-                warmup=config["train"]["warmup"], warmup_steps=config["train"]["warmup_steps"])
+            optimizer=self.optimizer,
+            gamma=config["train"]["lr_decay"],
+            min_lr=config["train"]["min_lr"],
+            last_epoch=-1,
+            warmup=config["train"]["warmup"],
+            warmup_steps=config["train"]["warmup_steps"],
+        )
 
         if self.config["device"] != "cpu":
-            #self.scaler = torch.cuda.amp.GradScaler(enabled=self.config["train"]["mixed_precision"])
-            self.scaler = torch.amp.GradScaler('cuda', enabled=self.config["train"]["mixed_precision"])
+            # self.scaler = torch.cuda.amp.GradScaler(enabled=self.config["train"]["mixed_precision"])
+            self.scaler = torch.amp.GradScaler(
+                "cuda", enabled=self.config["train"]["mixed_precision"]
+            )
 
     def pipeline(self) -> None:
         self.config["val"]["output_dir"] = dir_checker(self.config["val"]["output_dir"])
@@ -83,7 +90,9 @@ class TrainModule:
         if self.config["train"]["model_ckpt"] is not None:
             checkpoint = torch.load(self.config["train"]["model_ckpt"])
             self.model.load_state_dict(checkpoint, strict=True)
-            logger.info(f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}')
+            logger.info(
+                f'Model loaded from checkpoint: {self.config["train"]["model_ckpt"]}'
+            )
 
         self.t_loader = dataloader_factory(config=self.config, data_split="train")
         self.v_loader = dataloader_factory(config=self.config, data_split="val")
@@ -91,7 +100,10 @@ class TrainModule:
         self.state = "running"
 
         self.pbar = trange(
-            self.config["train"]["epochs"], disable=(not self.config["progress_bar"]), position=0, leave=True
+            self.config["train"]["epochs"],
+            disable=(not self.config["progress_bar"]),
+            position=0,
+            leave=True,
         )
         for epoch in self.pbar:
             if self.config["augmentations"]:
@@ -106,7 +118,9 @@ class TrainModule:
             try:
                 self.train_procedure()
             except KeyboardInterrupt:
-                logger.warning("\nKeyboard Interrupt detected. Attempting gracefull shutdown...")
+                logger.warning(
+                    "\nKeyboard Interrupt detected. Attempting gracefull shutdown..."
+                )
                 self.state = "interrupted"
             except Exception as err:
                 raise (err)
@@ -115,7 +129,10 @@ class TrainModule:
             if self.state == "interrupted":
                 self.validation_procedure()
                 self.pbar.set_postfix(
-                    {k: self.postfix[k] for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}}
+                    {
+                        k: self.postfix[k]
+                        for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}
+                    }
                 )
             #'''
 
@@ -134,8 +151,12 @@ class TrainModule:
             self.model.load_state_dict(torch.load(self.best_model_path), strict=True)
             logger.info(f"Best model loaded from checkpoint: {self.best_model_path}")
         elif self.config["test"]["model_ckpt"] is not None:
-            self.model.load_state_dict(torch.load(self.config["test"]["model_ckpt"]), strict=True)
-            logger.info(f'Model loaded from checkpoint: {self.config["test"]["model_ckpt"]}')
+            self.model.load_state_dict(
+                torch.load(self.config["test"]["model_ckpt"]), strict=True
+            )
+            logger.info(
+                f'Model loaded from checkpoint: {self.config["test"]["model_ckpt"]}'
+            )
         elif self.state == "initializing":
             logger.warning("Warning: Testing with random weights")
 
@@ -159,16 +180,27 @@ class TrainModule:
             leave=False,
         ):
             train_step = self.training_step(batch)
-            self.postfix["train_loss_step"] = float(f"{train_step['train_loss_step']:.3f}")
+            self.postfix["train_loss_step"] = float(
+                f"{train_step['train_loss_step']:.3f}"
+            )
             train_loss_list.append(train_step["train_loss_step"])
-            self.postfix["train_cls_loss_step"] = float(f"{train_step['train_cls_loss']:.3f}")
+            self.postfix["train_cls_loss_step"] = float(
+                f"{train_step['train_cls_loss']:.3f}"
+            )
             train_cls_loss_list.append(train_step["train_cls_loss"])
-            self.postfix["train_triplet_loss_step"] = float(f"{train_step['train_triplet_loss']:.3f}")
+            self.postfix["train_triplet_loss_step"] = float(
+                f"{train_step['train_triplet_loss']:.3f}"
+            )
             train_triplet_loss_list.append(train_step["train_triplet_loss"])
-            self.postfix["train_center_loss_step"] = float(f"{train_step['train_center_loss']:.3f}")
+            self.postfix["train_center_loss_step"] = float(
+                f"{train_step['train_center_loss']:.3f}"
+            )
             train_center_loss_list.append(train_step["train_center_loss"])
             self.pbar.set_postfix(
-                {k: self.postfix[k] for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}}
+                {
+                    k: self.postfix[k]
+                    for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}
+                }
             )
             if step % self.config["train"]["log_steps"] == 0:
                 save_logs(
@@ -176,18 +208,18 @@ class TrainModule:
                         epoch=self.postfix["Epoch"],
                         seq_len=self.max_len,
                         step=step,
-                        train_loss_step= self.postfix["train_loss_step"],
+                        train_loss_step=self.postfix["train_loss_step"],
                         train_cls_loss_step=self.postfix["train_cls_loss_step"],
                         train_triplet_loss_step=self.postfix["train_triplet_loss_step"],
                         train_center_loss_step=self.postfix["train_center_loss_step"],
                     ),
                     output_dir=self.config["val"]["output_dir"],
                     name="log_steps",
-                    use_wandb=self.config["use_wandb"]
+                    use_wandb=self.config["use_wandb"],
                 )
-            if (step+1) % self.config["train"]["lr_update_steps"] == 0:
+            if (step + 1) % self.config["train"]["lr_update_steps"] == 0:
                 self.scheduler.step()
-            if (step+1) % self.config["val"]["val_period"] == 0:
+            if (step + 1) % self.config["val"]["val_period"] == 0:
                 self.validation_procedure()
 
         train_loss = torch.tensor(train_loss_list)
@@ -198,14 +230,20 @@ class TrainModule:
         self.postfix["train_cls_loss"] = train_cls_loss.mean().item()
         self.postfix["train_triplet_loss"] = train_triplet_loss.mean().item()
         self.postfix["train_center_loss"] = train_center_loss.mean().item()
-        
+
         self.validation_procedure()
         self.overfit_check()
-        self.pbar.set_postfix({k: self.postfix[k] for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}})
+        self.pbar.set_postfix(
+            {
+                k: self.postfix[k]
+                for k in self.postfix.keys() & {"train_loss_step", "mr1", "mAP"}
+            }
+        )
 
     def training_step(self, batch: BatchDict) -> Dict[str, float]:
         with torch.autocast(
-            device_type=self.config["device"].split(":")[0], enabled=self.config["train"]["mixed_precision"]
+            device_type=self.config["device"].split(":")[0],
+            enabled=self.config["train"]["mixed_precision"],
         ):
             # print("*"*50)
             # print(batch["anchor"].shape)
@@ -221,47 +259,60 @@ class TrainModule:
             labels_anchor = batch["anchor_label"].long()
             labels_neg = batch["negative_label"].long()
 
-
-            embeddings = torch.cat([anchor["f_t"], positive["f_t"], negative["f_t"]], dim=0)
+            embeddings = torch.cat(
+                [anchor["f_t"], positive["f_t"], negative["f_t"]], dim=0
+            )
 
             batch_size = embeddings.shape[0]
-            
-            labels = torch.cat([
-                labels_anchor,  
-                labels_anchor, 
-                labels_neg
-            ]).to(self.config["device"]).long()
+
+            labels = (
+                torch.cat([labels_anchor, labels_anchor, labels_neg])
+                .to(self.config["device"])
+                .long()
+            )
 
             def verify_labels_in_range(labels, num_classes):
                 """Checks that all labels are within the expected range."""
                 if torch.any(labels >= num_classes) or torch.any(labels < 0):
                     print(labels, num_classes)
                     raise ValueError("One or more labels are out of bounds.")
-                
-            verify_labels_in_range(labels_anchor, self.config["ce"]["output_dims"])
+
+            verify_labels_in_range(labels_anchor, self.config["train"]["num_classes"])
 
             if self.config["triplet"]["weight"] < 0.001:
                 ce_loss = torch.tensor(0.0)
             else:
-                tri_loss = self.triplet_loss(embeddings, labels.to(self.config["device"]))*self.config["ce"]["weight"]
+                tri_loss = (
+                    self.triplet_loss(embeddings, labels.to(self.config["device"]))
+                    * self.config["ce"]["weight"]
+                )
 
             if self.config["ce"]["weight"] < 0.001:
                 ce_loss = torch.tensor(0.0)
             else:
-                ce_loss = self.cls_loss(anchor["cls"], labels_anchor.float().to(self.config["device"]))*self.config["triplet"]["weight"]
+                ce_loss = (
+                    self.cls_loss(
+                        anchor["cls"], labels_anchor.float().to(self.config["device"])
+                    )
+                    * self.config["triplet"]["weight"]
+                )
 
             if self.config["center"]["weight"] < 0.001:
                 center_loss = torch.tensor(0.0)
             else:
-                center_loss = self.center_loss(anchor["f_c"], labels_anchor.to(self.config["device"]))*self.config["center"]["weight"]
+                center_loss = (
+                    self.center_loss(
+                        anchor["f_c"], labels_anchor.to(self.config["device"])
+                    )
+                    * self.config["center"]["weight"]
+                )
 
             loss = tri_loss + ce_loss + center_loss
-
 
         self.optimizer.zero_grad()
         if self.config["device"] != "cpu":
             self.scaler.scale(loss).backward()
-            
+
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
 
@@ -271,22 +322,30 @@ class TrainModule:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
-            
 
-        return {"train_loss_step": loss.item(), 
-                "train_triplet_loss": tri_loss.item(), 
-                "train_cls_loss": ce_loss.item(),
-                "train_center_loss": center_loss.item()}
+        return {
+            "train_loss_step": loss.item(),
+            "train_triplet_loss": tri_loss.item(),
+            "train_cls_loss": ce_loss.item(),
+            "train_center_loss": center_loss.item(),
+        }
 
     def validation_procedure(self) -> None:
         self.model.eval()
         embeddings: Dict[int, torch.Tensor] = {}
-        for batch in tqdm(self.v_loader, disable=(not self.config["progress_bar"]), position=1, leave=False):
+        for batch in tqdm(
+            self.v_loader,
+            disable=(not self.config["progress_bar"]),
+            position=1,
+            leave=False,
+        ):
             val_dict = self.validation_step(batch)
             if val_dict["f_t"].ndim == 1:
                 val_dict["f_c"] = val_dict["f_c"].unsqueeze(0)
                 val_dict["f_t"] = val_dict["f_t"].unsqueeze(0)
-            for anchor_id, triplet_embedding, embedding in zip(val_dict["anchor_id"], val_dict["f_t"], val_dict["f_c"]):
+            for anchor_id, triplet_embedding, embedding in zip(
+                val_dict["anchor_id"], val_dict["f_t"], val_dict["f_c"]
+            ):
                 embeddings[anchor_id] = torch.stack([triplet_embedding, embedding])
 
         val_outputs = self.validation_epoch_end(embeddings)
@@ -297,32 +356,41 @@ class TrainModule:
         )
 
         if self.config["val"]["save_val_outputs"]:
-            val_outputs["val_embeddings"] = torch.stack(list(embeddings.values()))[:, 1].numpy()
+            val_outputs["val_embeddings"] = torch.stack(list(embeddings.values()))[
+                :, 1
+            ].numpy()
             save_predictions(val_outputs, output_dir=self.config["val"]["output_dir"])
-            save_logs(self.postfix, output_dir=self.config["val"]["output_dir"],
-                      use_wandb=self.config["use_wandb"])
+            save_logs(
+                self.postfix,
+                output_dir=self.config["val"]["output_dir"],
+                use_wandb=self.config["use_wandb"],
+            )
         self.model.train()
 
-    def validation_epoch_end(self, outputs: Dict[int, torch.Tensor]) -> Dict[str, np.ndarray]:
-        #val_loss = torch.zeros(len(outputs))
-        #pos_ids = []
-        #neg_ids = []
+    def validation_epoch_end(
+        self, outputs: Dict[int, torch.Tensor]
+    ) -> Dict[str, np.ndarray]:
+        # val_loss = torch.zeros(len(outputs))
+        # pos_ids = []
+        # neg_ids = []
         clique_ids = []
         for k, (anchor_id, embeddings) in enumerate(outputs.items()):
-            #clique_id, pos_id, neg_id = self.v_loader.dataset._triplet_sampling(anchor_id)
-            #val_loss[k] = self.triplet_loss(embeddings[0], outputs[pos_id][0], outputs[neg_id][0]).item()
-            #pos_ids.append(pos_id)
-            #neg_ids.append(neg_id)
-            clique_id = self.v_loader.dataset.version2clique.loc[anchor_id, 'clique']
+            # clique_id, pos_id, neg_id = self.v_loader.dataset._triplet_sampling(anchor_id)
+            # val_loss[k] = self.triplet_loss(embeddings[0], outputs[pos_id][0], outputs[neg_id][0]).item()
+            # pos_ids.append(pos_id)
+            # neg_ids.append(neg_id)
+            clique_id = self.v_loader.dataset.version2clique.loc[anchor_id, "clique"]
             clique_ids.append(clique_id)
-        #anchor_ids = np.stack(list(outputs.keys()))
+        # anchor_ids = np.stack(list(outputs.keys()))
         preds = torch.stack(list(outputs.values()))[:, 1]
-        #self.postfix["val_loss"] = val_loss.mean().item()
-        rranks, average_precisions = calculate_ranking_metrics_batched(embeddings=preds.numpy(), cliques=clique_ids)
+        # self.postfix["val_loss"] = val_loss.mean().item()
+        rranks, average_precisions = calculate_ranking_metrics_batched(
+            embeddings=preds.numpy(), cliques=clique_ids
+        )
         self.postfix["mrr"] = rranks.mean()
         self.postfix["mAP"] = average_precisions.mean()
         return {
-            #"triplet_ids": np.stack(list(zip(clique_ids, anchor_ids, pos_ids, neg_ids))),
+            # "triplet_ids": np.stack(list(zip(clique_ids, anchor_ids, pos_ids, neg_ids))),
             "rranks": rranks,
             "average_precisions": average_precisions,
         }
@@ -352,29 +420,45 @@ class TrainModule:
                 trackids.append(anchor_id)
                 embeddings.append(embedding.numpy())
         predictions = []
-        for chunk_result in pairwise_distances_chunked(embeddings, metric='cosine', reduce_func=reduce_func, working_memory=40):
+        for chunk_result in pairwise_distances_chunked(
+            embeddings, metric="cosine", reduce_func=reduce_func, working_memory=40
+        ):
             for query_indx, query_nearest_items in chunk_result:
-                predictions.append((trackids[query_indx], [trackids[nn_indx] for nn_indx in query_nearest_items]))
+                predictions.append(
+                    (
+                        trackids[query_indx],
+                        [trackids[nn_indx] for nn_indx in query_nearest_items],
+                    )
+                )
         save_test_predictions(predictions, output_dir=self.config["test"]["output_dir"])
 
     def overfit_check(self) -> None:
         if self.early_stop(self.postfix["mAP"]):
-            logger.info(f"\nValidation not improved for {self.early_stop.patience} consecutive epochs. Stopping...")
+            logger.info(
+                f"\nValidation not improved for {self.early_stop.patience} consecutive epochs. Stopping..."
+            )
             self.state = "early_stopped"
 
         if self.early_stop.counter > 0:
             logger.info("\nValidation mAP was not improved")
         else:
-            logger.info(f"\nMetric improved. New best score: {self.early_stop.max_validation_mAP:.3f}")
-            save_best_log(self.postfix, output_dir=self.config["val"]["output_dir"],
-                          use_wandb=self.config["use_wandb"])
+            logger.info(
+                f"\nMetric improved. New best score: {self.early_stop.max_validation_mAP:.3f}"
+            )
+            save_best_log(
+                self.postfix,
+                output_dir=self.config["val"]["output_dir"],
+                use_wandb=self.config["use_wandb"],
+            )
 
             logger.info("Saving model...")
             epoch = self.postfix["Epoch"]
             max_secs = self.max_len
             prev_model = deepcopy(self.best_model_path)
             self.best_model_path = os.path.join(
-                self.config["val"]["output_dir"], "model", f"best-model-{epoch=}-{max_secs=}.pt"
+                self.config["val"]["output_dir"],
+                "model",
+                f"best-model-{epoch=}-{max_secs=}.pt",
             )
             os.makedirs(os.path.dirname(self.best_model_path), exist_ok=True)
             torch.save(deepcopy(self.model.state_dict()), self.best_model_path)
@@ -385,6 +469,6 @@ class TrainModule:
         optimizer = torch.optim.AdamW(
             params=self.model.parameters(),
             lr=self.config["train"]["learning_rate"],
-            betas=[self.config["train"]["adam_b1"], self.config["train"]["adam_b2"]]
+            betas=[self.config["train"]["adam_b1"], self.config["train"]["adam_b2"]],
         )
         return optimizer

@@ -7,7 +7,7 @@ wandb.init(project="PROJECTNAME")
 
 from models.train_module import TrainModule
 from utils import initialize_logging, load_config
-config = load_config(config_path="./config/config0.yaml")
+config = load_config(config_path="./config/config_train.yaml")
 
 def set_seed(seed):
     random.seed(seed)
