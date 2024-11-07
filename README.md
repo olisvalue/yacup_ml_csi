@@ -12,7 +12,7 @@ cd yacup_ml_csi
 pip install -r requirements.txt
 ```
 
-## Данные и веса модели.
+## Данные и веса модели
 Все файлы можно загрузить по [ссылке](https://disk.yandex.ru/d/RjMQIusMf6_L4w). Нужно разместить их в ```./data```.   
 Веса обученной модели можно загрузить по [ссылке](https://disk.yandex.ru/d/9txEH19IBe5SzQ).
 
