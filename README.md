@@ -1,42 +1,42 @@
-Данный репозиторий содержит мое решение для соревнования Yandex Cup ML 2024.
+This repository contains my solution for the Yandex Cup ML 2024 competition. (**17th place** in LB, **0.575** public nDCG,	**0.563** private nDCG)
 
-Участникам предлагалось создать алгоритм, который будет находить вариации и каверы музыкальных произведений, наиболее близкие к оригинальной композиции.  
+The participants were asked to create an algorithm that would find variations and covers of musical works closest to the original composition.  
 
-В качестве данных авторами задачи были предложены сжатые по размерности времени CQT-спектрограммы. Каждая спектрограмма построена по 60 секундам, взятыми из центральной части трека, и имеет итоговую размерность (84, 50).
+As data, the authors of the problem proposed time-compressed CQT spectrograms. Each spectrogram is based on 60 seconds taken from the central part of the track and has a final dimension (84, 50).
 
-## Установка
-Откройте терминал и выполните:
+## Installation
+Run in your terminal:
 ```
 git clone https://github.com/olisvalue/yacup_ml_csi.git
 cd yacup_ml_csi
 pip install -r requirements.txt
 ```
 
-## Данные и веса модели
-Все файлы можно загрузить по [ссылке](https://disk.yandex.ru/d/RjMQIusMf6_L4w). Нужно разместить их в ```./data```.   
-Веса обученной модели можно загрузить по [ссылке](https://disk.yandex.ru/d/9txEH19IBe5SzQ).
+## Data and model weights
+All data can be downloaded at [link](https://disk.yandex.ru/d/RjMQIusMf6_L4w). You need to put them in the ```/data``` directory.   
+Model weights can be loaded [here](https://disk.yandex.ru/d/9txEH19IBe5SzQ).
 
 
-## Обучение
+## Training
 
-Для запуска обучения, выполните:
+To start training, run:
 ```
 python train.py
 ```
-Для обучения используется конфиг, находящийся здесь: ```./config/config_train.yaml```.   
-Необходимо обучать модель не менее 20 эпох.   
+The config used for training: ```/config/config_train.yaml```.   
+It is necessary to train the model for at least 20 epochs.   
 
-Обратите внимание на следующие параметры конфигурационного файла:   
-1. Для обучения только на train-выборке, используйте ```use_val_for_train: False```. Кроме того, поменяйте ```num_classes: 41616``` на ```num_classes: 39535``` в поле ```train```
-2. Если система имеет достаточно RAM, для ускорения обучения используйте ```store_data_in_ram: True```  
+Pay attention to the following configuration file parameters:   
+1. To train only on a train sample, use ``use_value_for_train: False``. Also, change ``enum_classes: 41616`` to ``num_classes: 39535`` in the ``train`` field
+2. If the system has enough RAM, use ``store_data_in_ram: True`` to speed up training
 
-## Инференс
-Для получения ответов модели на тестовой выборке соревнования, выполните:
+## Inference
+To get the answers of the model in the test sample of the competition, run:
 ```
 python test.py
 ```
-Для инференса используется конфиг, находящийся здесь: ```./config/config_test.yaml```  
+For the inference, the config used: ``/config/config_test.yaml```
 
-Укажите в поле ```test``` конфигурационного файла правильный путь к чекпоинту модели, которая будет использоваться для инференса.
+Specify the correct path to the checkpoint of the model to be used for the inference in the ``test` field of the configuration file.
 
-После выполнения скрипта, файл с ответами будет находиться в ```./outputs_test```
+After executing the script, the file with the answers will be located in ``/outputs_test``
