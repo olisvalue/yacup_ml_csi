@@ -1,4 +1,4 @@
-This repository contains my solution for the [Yandex Cup ML 2024](https://yandex.ru/cup/ml) competition (**17th place on the LB**, **0.575** public nDCG,	**0.563** private nDCG).
+This repository contains my solution for the [Yandex Cup ML 2024](https://yandex.ru/cup/ml) competition (**17th place** on the LB, **0.575** public nDCG,	**0.563** private nDCG).
 
 The participants were asked to create an algorithm that would find variations and covers of musical works most similar to the original composition.  
 
