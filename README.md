@@ -1,8 +1,8 @@
-This repository contains my solution for the [Yandex Cup ML 2024](https://yandex.ru/cup/ml) competition (**17th place** in LB, **0.575** public nDCG,	**0.563** private nDCG).
+This repository contains my solution for the [Yandex Cup ML 2024](https://yandex.ru/cup/ml) competition (**17th place on the LB**, **0.575** public nDCG,	**0.563** private nDCG).
 
-The participants were asked to create an algorithm that would find variations and covers of musical works closest to the original composition.  
+The participants were asked to create an algorithm that would find variations and covers of musical works most similar to the original composition.  
 
-As data, the authors of the problem proposed time-compressed CQT spectrograms. Each spectrogram is based on 60 seconds taken from the central part of the track and has a final dimension (84, 50).
+As data, the authors of the problem provided time-compressed CQT spectrograms. Each spectrogram represents 60 seconds taken from the central part of a track and has dimension of (84, 50).
 
 ## Installation
 Run in your terminal:
