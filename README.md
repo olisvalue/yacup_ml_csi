@@ -1,4 +1,4 @@
-This repository contains my solution for the Yandex Cup ML 2024 competition. (**17th place** in LB, **0.575** public nDCG,	**0.563** private nDCG)
+This repository contains my solution for the Yandex Cup ML 2024 competition (**17th place** in LB, **0.575** public nDCG,	**0.563** private nDCG).
 
 The participants were asked to create an algorithm that would find variations and covers of musical works closest to the original composition.  
 
@@ -27,8 +27,8 @@ The config used for training: ```/config/config_train.yaml```.
 It is necessary to train the model for at least 20 epochs.   
 
 Pay attention to the following configuration file parameters:   
-1. To train only on a train sample, use ``use_value_for_train: False``. Also, change ``enum_classes: 41616`` to ``num_classes: 39535`` in the ``train`` field
-2. If the system has enough RAM, use ``store_data_in_ram: True`` to speed up training
+1. To train only on a train sample, use ``use_value_for_train: False``. Also, change ``enum_classes: 41616`` to ``num_classes: 39535`` in the ``train`` field.
+2. If the system has enough RAM, use ``store_data_in_ram: True`` to speed up training.
 
 ## Inference
 To get the answers of the model in the test sample of the competition, run:
